@@ -1,10 +1,10 @@
 module software.sava.incident_io {
   requires java.net.http;
 
-  requires systems.comodal.json_iterator;
-  requires software.sava.core;
+  requires transitive systems.comodal.json_iterator;
   requires software.sava.rpc;
-  requires jdk.httpserver;
 
-  requires software.sava.incident_core;
+  requires transitive software.sava.incident_core;
+
+  exports software.sava.incident.io;
 }

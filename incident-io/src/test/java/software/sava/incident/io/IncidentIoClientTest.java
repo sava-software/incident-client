@@ -15,7 +15,7 @@ final class IncidentIoClientTest {
   @Test
   void testBuilder() {
     final var endpoint = "https://api.incident.io/v2";
-    final var client = IncidentIoClient.buildClient()
+    final var client = IncidentIoClient.clientBuilder()
         .endpoint(URI.create(endpoint))
         .createClient();
     assertNotNull(client);
@@ -25,7 +25,7 @@ final class IncidentIoClientTest {
 
   @Test
   void testCreateIncidentRequestBody() {
-    final var request = CreateIncidentRequest.builder()
+    final var request = CreateIncidentRequest.requestBuilder()
         .name("Test Incident")
         .summary("Test Summary")
         .incidentTypeId("type-123")
@@ -45,13 +45,13 @@ final class IncidentIoClientTest {
 
   @Test
   void testCreateIncidentRequestBodyFull() {
-    final var request = CreateIncidentRequest.builder()
+    final var request = CreateIncidentRequest.requestBuilder()
         .name("Full Incident")
         .summary("Full Summary")
         .description("Full Description")
         .idempotencyKey("idem-123")
         .incidentTypeId("type-123")
-        .mode(CreateIncidentRequest.Mode.manual)
+        .mode(CreateIncidentRequest.Mode.standard)
         .priorityId("priority-123")
         .severityId("severity-123")
         .statusId("status-123")
@@ -83,7 +83,7 @@ final class IncidentIoClientTest {
     assert (body.contains("""
         "incident_role_assignments":[{"incident_role_id":"role-1","assignee_id":"assignee-1"}]"""));
     assert (body.contains("""
-        "mode":"manual\""""));
+        "mode":"standard\""""));
     assert (body.contains("""
         "priority_id":"priority-123\""""));
     assert (body.contains("""
@@ -102,7 +102,7 @@ final class IncidentIoClientTest {
 
   @Test
   void testCreateIncidentRequestBodyEmptyFields() {
-    final var request = CreateIncidentRequest.builder()
+    final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
         .description("") // Blank string should be excluded
@@ -120,7 +120,7 @@ final class IncidentIoClientTest {
 
   @Test
   void testCreateIncidentRequestBodyEmptyCollections() {
-    final var request = CreateIncidentRequest.builder()
+    final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
         .incidentTypeId("type-123")
@@ -136,12 +136,12 @@ final class IncidentIoClientTest {
 
   @Test
   void testCreateIncidentRequestBodyEnumsAndBooleans() {
-    final var request = CreateIncidentRequest.builder()
+    final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
         .incidentTypeId("type-123")
-        .mode(null)
-        .visibility(null)
+        .mode((String) null)
+        .visibility((String) null)
         .creatorOutOfHours(null)
         .build();
 

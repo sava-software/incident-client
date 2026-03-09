@@ -9,7 +9,7 @@ import java.util.Map;
 
 public interface CreateIncidentRequest extends PostRequest {
 
-  static Builder builder() {
+  static Builder requestBuilder() {
     return new Builder();
   }
 
@@ -25,7 +25,7 @@ public interface CreateIncidentRequest extends PostRequest {
 
   Collection<IncidentRoleAssignment> incidentRoleAssignments();
 
-  Mode mode();
+  String mode();
 
   String priorityId();
 
@@ -33,7 +33,7 @@ public interface CreateIncidentRequest extends PostRequest {
 
   String statusId();
 
-  Visibility visibility();
+  String visibility();
 
   String slackTeamId();
 
@@ -42,8 +42,10 @@ public interface CreateIncidentRequest extends PostRequest {
   Map<String, String> customFieldValues();
 
   enum Mode {
-    manual,
-    realtime
+    standard,
+    retrospective,
+    test,
+    tutorial
   }
 
   enum Visibility {
@@ -67,11 +69,11 @@ public interface CreateIncidentRequest extends PostRequest {
     private String description;
     private String incidentTypeId;
     private Collection<IncidentRoleAssignment> incidentRoleAssignments;
-    private Mode mode;
+    private String mode;
     private String priorityId;
     private String severityId;
     private String statusId;
-    private Visibility visibility;
+    private String visibility;
     private String slackTeamId;
     private Boolean creatorOutOfHours;
     private Map<String, String> customFieldValues;
@@ -107,6 +109,11 @@ public interface CreateIncidentRequest extends PostRequest {
     }
 
     public Builder mode(final Mode mode) {
+      this.mode = mode == null ? null : mode.name();
+      return this;
+    }
+
+    public Builder mode(final String mode) {
       this.mode = mode;
       return this;
     }
@@ -127,6 +134,11 @@ public interface CreateIncidentRequest extends PostRequest {
     }
 
     public Builder visibility(final Visibility visibility) {
+      this.visibility = visibility == null ? null : visibility.toString();
+      return this;
+    }
+
+    public Builder visibility(final String visibility) {
       this.visibility = visibility;
       return this;
     }

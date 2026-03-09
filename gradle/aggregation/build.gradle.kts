@@ -4,13 +4,14 @@ plugins {
 
 dependencies {
   nmcpAggregation(project(":incident-core"))
-  nmcpAggregation(project(":incident-io"))
+//  nmcpAggregation(project(":incident-io"))
+  nmcpAggregation(project(":incident-pagerduty"))
 }
 
 tasks.register("publishToGitHubPackages") {
   group = "publishing"
   dependsOn(
     ":incident-core:publishMavenJavaPublicationToSavaGithubPackagesRepository",
-    ":incident-io:publishMavenJavaPublicationToSavaGithubPackagesRepository"
+    ":incident-pagerduty:publishMavenJavaPublicationToSavaGithubPackagesRepository"
   )
 }

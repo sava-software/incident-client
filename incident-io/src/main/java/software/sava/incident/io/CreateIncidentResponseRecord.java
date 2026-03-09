@@ -2,7 +2,6 @@ package software.sava.incident.io;
 
 import systems.comodal.jsoniter.FieldBufferPredicate;
 import systems.comodal.jsoniter.JsonIterator;
-import systems.comodal.jsoniter.ValueType;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;

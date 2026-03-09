@@ -15,11 +15,11 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   private final String description;
   private final String incidentTypeId;
   private final Collection<IncidentRoleAssignment> incidentRoleAssignments;
-  private final Mode mode;
+  private final String mode;
   private final String priorityId;
   private final String severityId;
   private final String statusId;
-  private final Visibility visibility;
+  private final String visibility;
   private final String slackTeamId;
   private final Boolean creatorOutOfHours;
   private final Map<String, String> customFieldValues;
@@ -31,11 +31,11 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
                               final String description,
                               final String incidentTypeId,
                               final Collection<IncidentRoleAssignment> incidentRoleAssignments,
-                              final Mode mode,
+                              final String mode,
                               final String priorityId,
                               final String severityId,
                               final String statusId,
-                              final Visibility visibility,
+                              final String visibility,
                               final String slackTeamId,
                               final Boolean creatorOutOfHours,
                               final Map<String, String> customFieldValues) {
@@ -87,7 +87,7 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   }
 
   @Override
-  public Mode mode() {
+  public String mode() {
     return mode;
   }
 
@@ -107,7 +107,7 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   }
 
   @Override
-  public Visibility visibility() {
+  public String visibility() {
     return visibility;
   }
 
@@ -147,15 +147,11 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
           .collect(Collectors.joining(",")));
       sb.append(']');
     }
-    if (mode != null) {
-      appendField(sb, "mode", mode.name());
-    }
+    appendField(sb, "mode", mode);
     appendField(sb, "priority_id", priorityId);
     appendField(sb, "severity_id", severityId);
     appendField(sb, "status_id", statusId);
-    if (visibility != null) {
-      appendField(sb, "visibility", visibility.toString());
-    }
+    appendField(sb, "visibility", visibility);
     appendField(sb, "slack_team_id", slackTeamId);
     if (creatorOutOfHours != null) {
       if (sb.length() > 1) sb.append(',');

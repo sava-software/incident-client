@@ -1,13 +1,14 @@
 package software.sava.incident.core.client;
 
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.function.BiPredicate;
 import java.util.function.UnaryOperator;
 
-public interface HttpClient {
+public interface HttpApiClient {
 
   URI endpoint();
 
@@ -21,14 +22,30 @@ public interface HttpClient {
     protected UnaryOperator<HttpRequest.Builder> extendRequest;
     protected BiPredicate<HttpResponse<?>, byte[]> testResponse;
 
-    protected abstract B builder();
-    
+    protected final B builder() {
+      //noinspection unchecked
+      return (B) this;
+    }
+
+    protected void setDefaults() {
+      if (this.httpClient == null) {
+        this.httpClient = HttpClient.newHttpClient();
+      }
+      if (this.requestTimeout == null) {
+        this.requestTimeout = Duration.ofSeconds(8);
+      }
+    }
+
     public B endpoint(final URI endpoint) {
       this.endpoint = endpoint;
       return builder();
     }
 
-    public B httpClient(final java.net.http.HttpClient httpClient) {
+    public B endpoint(final String endpoint) {
+      return endpoint(URI.create(endpoint));
+    }
+
+    public B httpClient(final HttpClient httpClient) {
       this.httpClient = httpClient;
       return builder();
     }
@@ -36,6 +53,10 @@ public interface HttpClient {
     public B requestTimeout(final Duration requestTimeout) {
       this.requestTimeout = requestTimeout;
       return builder();
+    }
+
+    public UnaryOperator<HttpRequest.Builder> extendRequest() {
+      return extendRequest;
     }
 
     public B extendRequest(final UnaryOperator<HttpRequest.Builder> extendRequest) {
