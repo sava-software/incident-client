@@ -4,7 +4,7 @@ This client aims to be compliant with the latest version of
 the [PagerDuty Event API](https://developer.pagerduty.com/api-reference/f80f5db9acbe3-pager-duty-v2-events-api), currently V2. It also only aims to be
 supported against the latest GA OpenJDK release.
 
-## [Example Usage](incident-examples/src/main/java/software/sava/incident/examples/PagerdutyExamples.java)
+## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/PagerdutyExamples.java)
 
 ```java
 var client = PagerDutyEventClient.build()
