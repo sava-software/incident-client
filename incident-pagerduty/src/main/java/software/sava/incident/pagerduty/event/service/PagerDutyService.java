@@ -32,6 +32,8 @@ public interface PagerDutyService {
 
   PagerDutyEventPayload eventPrototype();
 
+  PagerDutyEventPayload.Builder eventFromPrototype();
+
   default CompletableFuture<PagerDutyEventResponse> resolveEvent(final PagerDutyEventResponse triggerResponse,
                                                                  final long stepDelay,
                                                                  final long maxDelay,

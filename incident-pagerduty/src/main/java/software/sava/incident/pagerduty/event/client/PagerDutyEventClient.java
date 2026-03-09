@@ -7,8 +7,6 @@ import software.sava.incident.pagerduty.event.data.PagerDutyEventResponse;
 
 import java.util.concurrent.CompletableFuture;
 
-import static java.util.Objects.requireNonNull;
-
 public interface PagerDutyEventClient extends HttpApiClient {
 
   static Builder clientBuilder() {

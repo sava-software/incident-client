@@ -1,4 +1,4 @@
-module software.sava.pagerduty {
+module software.sava.incident_pagerduty {
   requires java.net.http;
 
   requires transitive systems.comodal.json_iterator;
@@ -8,5 +8,6 @@ module software.sava.pagerduty {
   exports software.sava.incident.pagerduty.event.client;
   exports software.sava.incident.pagerduty.event.data;
   exports software.sava.incident.pagerduty.event.service;
+  exports software.sava.incident.pagerduty.config;
   exports software.sava.incident.pagerduty.exceptions;
 }

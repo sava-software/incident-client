@@ -76,9 +76,4 @@ record PagerDutyEventPayloadRecord(String dedupKey,
   public String payloadJson() {
     return json;
   }
-
-  @Override
-  public String toString() {
-    return json;
-  }
 }

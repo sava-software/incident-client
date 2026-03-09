@@ -23,13 +23,8 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
   private static final System.Logger log = System.getLogger(PagerDutyService.class.getPackageName());
 
   @Override
-  public PagerDutyEventClient client() {
-    return client;
-  }
-
-  @Override
-  public PagerDutyEventPayload eventPrototype() {
-    return eventPrototype;
+  public PagerDutyEventPayload.Builder eventFromPrototype() {
+    return PagerDutyEventPayload.build(eventPrototype);
   }
 
   private void logFailure(final Throwable throwable,
@@ -39,15 +34,19 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
                           final String context) {
     if (throwable.getCause() instanceof final PagerDutyClientException pdException) {
       log.log(ERROR, format("Http Error Code: %s, Service Error Code: %s, Failure Count: %d, Last Delay: %d %s, Service Errors: %s, %s",
-          pdException.httpResponse() == null ? "?" : String.valueOf(pdException.httpResponse().statusCode()),
-          pdException.errorCode() == 0 ? "?" : String.valueOf(pdException.errorCode()),
-          numFailures,
-          retryDelay, timeUnit,
-          pdException.errors().toString(),
-          context), throwable.getCause());
+              pdException.httpResponse() == null ? "?" : String.valueOf(pdException.httpResponse().statusCode()),
+              pdException.errorCode() == 0 ? "?" : String.valueOf(pdException.errorCode()),
+              numFailures,
+              retryDelay, timeUnit,
+              pdException.errors().toString(),
+              context
+          ), throwable.getCause()
+      );
     } else {
       log.log(ERROR, format("Failure Count: %d, Last Delay: %d %s, %s",
-          numFailures, retryDelay, timeUnit, context), throwable.getCause());
+              numFailures, retryDelay, timeUnit, context
+          ), throwable.getCause()
+      );
     }
   }
 
