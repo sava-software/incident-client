@@ -1,5 +1,7 @@
 package software.sava.incident.pagerduty.event.data;
 
+import systems.comodal.jsoniter.JIUtil;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.ZonedDateTime;
@@ -57,7 +59,7 @@ record PagerDutyChangeEventPayloadRecord(String summary,
   }
 
   static class PagerDutyChangeEventPayloadBuilder implements PagerDutyChangeEventPayload.Builder {
-    
+
     String summary;
     String source;
     ZonedDateTime timestamp;
@@ -229,38 +231,6 @@ record PagerDutyChangeEventPayloadRecord(String summary,
       }
     }
 
-    private static String escapeQuotes(final String str) {
-      final char[] chars = str.toCharArray();
-      final char[] escaped = new char[chars.length << 1];
-      char c;
-      for (int escapes = 0, from = 0, dest = 0, to = 0; ; to++) {
-        if (to == chars.length) {
-          if (from == 0) {
-            return str;
-          } else {
-            final int len = to - from;
-            System.arraycopy(chars, from, escaped, dest, len);
-            dest += len;
-            return new String(escaped, 0, dest);
-          }
-        } else {
-          c = chars[to];
-          if (c == '\\') {
-            escapes++;
-          } else if (c == '"' && (escapes & 1) == 0) {
-            final int len = to - from;
-            System.arraycopy(chars, from, escaped, dest, len);
-            dest += len;
-            escaped[dest++] = '\\';
-            from = to;
-            escapes = 0;
-          } else {
-            escapes = 0;
-          }
-        }
-      }
-    }
-
     static String toJson(final Map<String, Object> object) {
       return object.entrySet().stream().map(entry -> {
         final var val = entry.getValue();
@@ -272,7 +242,7 @@ record PagerDutyChangeEventPayloadRecord(String summary,
           case Boolean bool -> bool;
           case Object obj -> {
             final var str = obj.toString();
-            yield str.indexOf('"') < 0 ? str : escapeQuotes(str);
+            yield JIUtil.escapeQuotesRemoveNewLinesChecked(str);
           }
         };
         final var key = entry.getKey();
