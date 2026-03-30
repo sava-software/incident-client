@@ -7,4 +7,5 @@ module software.sava.incident_io {
   requires transitive software.sava.incident_core;
 
   exports software.sava.incident.io;
+  exports software.sava.incident.io.config;
 }

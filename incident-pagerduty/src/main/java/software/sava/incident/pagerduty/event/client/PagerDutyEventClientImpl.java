@@ -189,8 +189,6 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
 
   @Override
   public String toString() {
-    return "PagerDutyHttpEventClient{defaultClientName='" + defaultClientName + '\'' +
-        ", defaultClientUrl='" + defaultClientUrl + '\'' +
-        ", endpoint=" + endpoint + '}';
+    return "PagerDutyHttpEventClient{defaultClientName='" + defaultClientName + '}';
   }
 }

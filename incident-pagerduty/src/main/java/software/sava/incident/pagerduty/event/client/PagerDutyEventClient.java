@@ -111,5 +111,21 @@ public interface PagerDutyEventClient extends HttpApiClient {
       this.authToken = authToken;
       return this;
     }
+
+    public String defaultClientName() {
+      return defaultClientName;
+    }
+
+    public String defaultClientUrl() {
+      return defaultClientUrl;
+    }
+
+    public String defaultRoutingKey() {
+      return defaultRoutingKey;
+    }
+
+    public String authToken() {
+      return authToken;
+    }
   }
 }

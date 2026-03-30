@@ -12,7 +12,7 @@ public interface HttpApiClient {
 
   URI endpoint();
 
-  java.net.http.HttpClient httpClient();
+  HttpClient httpClient();
 
   abstract class Builder<B extends Builder<B>> {
 
@@ -55,8 +55,24 @@ public interface HttpApiClient {
       return builder();
     }
 
+    public URI endpoint() {
+      return endpoint;
+    }
+
+    public HttpClient httpClient() {
+      return httpClient;
+    }
+
+    public Duration requestTimeout() {
+      return requestTimeout;
+    }
+
     public UnaryOperator<HttpRequest.Builder> extendRequest() {
       return extendRequest;
+    }
+
+    public BiPredicate<HttpResponse<?>, byte[]> testResponse() {
+      return testResponse;
     }
 
     public B extendRequest(final UnaryOperator<HttpRequest.Builder> extendRequest) {

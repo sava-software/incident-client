@@ -2,7 +2,9 @@ package software.sava.incident.io;
 
 import software.sava.incident.core.client.HttpApiClient;
 
+import java.net.http.HttpRequest;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.UnaryOperator;
 
 public interface IncidentIoClient extends HttpApiClient {
 
