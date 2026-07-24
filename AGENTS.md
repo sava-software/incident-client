@@ -52,8 +52,10 @@ truth. Verify against them, not against this repo's existing output:
 - **PagerDuty** — `https://github.com/PagerDuty/api-schema`;
   `reference/events-v2/openapiv3.json` is the contract for `incident-pagerduty`
   (payload fields, severity enum, required fields, response shapes).
-- **incident.io** — `https://api-docs.incident.io` (Create Incident V2) for
-  `incident-io` request/response fields.
+- **incident.io** — the Go SDK (`https://github.com/incident-io/incident-io-go`)
+  bundles the full current contract as `openapi3.json`; `IncidentsCreatePayloadV2` /
+  `IncidentV2` are the schemas for `incident-io` request/response fields.
+  `https://api-docs.incident.io` (Create Incident V2) is the prose companion.
 
 Clone reference repos outside this repository (or in a git-ignored location), record the
 paths in `AGENTS.local.md`, and `git pull` an existing clone before comparing.
@@ -106,9 +108,10 @@ stamped and refused by every baseline-touching consumer. `-PlistUnkilled` prints
 unkilled rows with PIT's mutation descriptions and, for a survivor whose
 same-coordinate sibling was detected, the sibling's killing test — the survivor is
 the opposite operand or branch direction of whatever that test pinned. Triage
-replaces a row's `# untriaged` label with a family label; the verify counts rows
-per label and warns when a label has no matching `# <label>` argument in
-`config/pitest/README.md`.
+replaces a row's `# untriaged` label with a family label; the verify and the
+`pitest<Suite>Debt` listing count rows per label and warn when a label has no
+matching `# <label>` argument in `config/pitest/README.md` — a count alone
+cannot tell a typo'd label from finished triage.
 
 **`qualityGate` ownership:** CI (the shared sava-build workflow) runs `check` only;
 the pre-release `qualityGate` plus long fuzz runs are release-checklist items run

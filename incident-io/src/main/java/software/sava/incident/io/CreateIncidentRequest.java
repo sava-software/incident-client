@@ -7,6 +7,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+/// A `POST /v2/incidents` request (`Incidents V2#Create`). Field names and shapes
+/// follow `IncidentsCreatePayloadV2`; the API requires `idempotency_key` and
+/// `visibility`, which this builder does not enforce — the provider adapter supplies
+/// both.
 public interface CreateIncidentRequest extends PostRequest {
 
   static Builder requestBuilder() {
@@ -19,26 +23,24 @@ public interface CreateIncidentRequest extends PostRequest {
 
   String summary();
 
-  String description();
-
   String incidentTypeId();
 
   Collection<IncidentRoleAssignment> incidentRoleAssignments();
 
   String mode();
 
-  String priorityId();
-
   String severityId();
 
+  /// Serialized as `incident_status_id`.
   String statusId();
 
+  /// Required by the API; a request without it is rejected.
   String visibility();
 
   String slackTeamId();
 
-  Boolean creatorOutOfHours();
-
+  /// Text custom-field values keyed by `custom_field_id`; serialized as
+  /// `custom_field_entries` with one `value_text` value per entry.
   Map<String, String> customFieldValues();
 
   enum Mode {
@@ -58,7 +60,29 @@ public interface CreateIncidentRequest extends PostRequest {
     }
   }
 
-  record IncidentRoleAssignment(String incidentRoleId, String assigneeId) {
+  /// A `UserReferencePayloadV2`: exactly one of the fields identifies the user; blank
+  /// fields are omitted from the serialized `assignee` object.
+  record UserReference(String id, String email, String slackUserId) {
+
+    public static UserReference byId(final String id) {
+      return new UserReference(id, null, null);
+    }
+
+    public static UserReference byEmail(final String email) {
+      return new UserReference(null, email, null);
+    }
+
+    public static UserReference bySlackUserId(final String slackUserId) {
+      return new UserReference(null, null, slackUserId);
+    }
+  }
+
+  record IncidentRoleAssignment(String incidentRoleId, UserReference assignee) {
+
+    /// Convenience for the common case of assigning by incident.io user id.
+    public IncidentRoleAssignment(final String incidentRoleId, final String assigneeId) {
+      this(incidentRoleId, UserReference.byId(assigneeId));
+    }
   }
 
   final class Builder extends Request.Builder {
@@ -66,16 +90,13 @@ public interface CreateIncidentRequest extends PostRequest {
     private String idempotencyKey;
     private String name;
     private String summary;
-    private String description;
     private String incidentTypeId;
     private Collection<IncidentRoleAssignment> incidentRoleAssignments;
     private String mode;
-    private String priorityId;
     private String severityId;
     private String statusId;
     private String visibility;
     private String slackTeamId;
-    private Boolean creatorOutOfHours;
     private Map<String, String> customFieldValues;
 
     public Builder idempotencyKey(final String idempotencyKey) {
@@ -90,11 +111,6 @@ public interface CreateIncidentRequest extends PostRequest {
 
     public Builder summary(final String summary) {
       this.summary = summary;
-      return this;
-    }
-
-    public Builder description(final String description) {
-      this.description = description;
       return this;
     }
 
@@ -115,11 +131,6 @@ public interface CreateIncidentRequest extends PostRequest {
 
     public Builder mode(final String mode) {
       this.mode = mode;
-      return this;
-    }
-
-    public Builder priorityId(final String priorityId) {
-      this.priorityId = priorityId;
       return this;
     }
 
@@ -148,11 +159,6 @@ public interface CreateIncidentRequest extends PostRequest {
       return this;
     }
 
-    public Builder creatorOutOfHours(final Boolean creatorOutOfHours) {
-      this.creatorOutOfHours = creatorOutOfHours;
-      return this;
-    }
-
     public Builder customFieldValues(final Map<String, String> customFieldValues) {
       this.customFieldValues = customFieldValues;
       return this;
@@ -164,16 +170,13 @@ public interface CreateIncidentRequest extends PostRequest {
           idempotencyKey,
           name,
           summary,
-          description,
           incidentTypeId,
           incidentRoleAssignments == null ? List.of() : List.copyOf(incidentRoleAssignments),
           mode,
-          priorityId,
           severityId,
           statusId,
           visibility,
           slackTeamId,
-          creatorOutOfHours,
           customFieldValues == null ? Map.of() : Map.copyOf(customFieldValues)
       );
     }

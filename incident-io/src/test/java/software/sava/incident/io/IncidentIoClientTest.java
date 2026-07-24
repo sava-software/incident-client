@@ -29,7 +29,6 @@ final class IncidentIoClientTest {
         .name("Test Incident")
         .summary("Test Summary")
         .incidentTypeId("type-123")
-        .priorityId("priority-123")
         .severityId("severity-123")
         .statusId("status-123")
         .visibility(CreateIncidentRequest.Visibility.PUBLIC)
@@ -39,7 +38,7 @@ final class IncidentIoClientTest {
     assertNotNull(body);
     // Basic validation of the JSON body
     assertEquals("""
-        {"name":"Test Incident","summary":"Test Summary","incident_type_id":"type-123","priority_id":"priority-123","severity_id":"severity-123","status_id":"status-123","visibility":"public"}""", body
+        {"name":"Test Incident","summary":"Test Summary","incident_type_id":"type-123","severity_id":"severity-123","incident_status_id":"status-123","visibility":"public"}""", body
     );
   }
 
@@ -48,16 +47,13 @@ final class IncidentIoClientTest {
     final var request = CreateIncidentRequest.requestBuilder()
         .name("Full Incident")
         .summary("Full Summary")
-        .description("Full Description")
         .idempotencyKey("idem-123")
         .incidentTypeId("type-123")
         .mode(CreateIncidentRequest.Mode.standard)
-        .priorityId("priority-123")
         .severityId("severity-123")
         .statusId("status-123")
         .visibility(CreateIncidentRequest.Visibility.PRIVATE)
         .slackTeamId("slack-123")
-        .creatorOutOfHours(true)
         .incidentRoleAssignments(List.of(
             new CreateIncidentRequest.IncidentRoleAssignment("role-1", "assignee-1")
         ))
@@ -77,27 +73,21 @@ final class IncidentIoClientTest {
     assert (body.contains("""
         "summary":"Full Summary\""""));
     assert (body.contains("""
-        "description":"Full Description\""""));
-    assert (body.contains("""
         "incident_type_id":"type-123\""""));
     assert (body.contains("""
-        "incident_role_assignments":[{"incident_role_id":"role-1","assignee_id":"assignee-1"}]"""));
+        "incident_role_assignments":[{"incident_role_id":"role-1","assignee":{"id":"assignee-1"}}]"""));
     assert (body.contains("""
         "mode":"standard\""""));
     assert (body.contains("""
-        "priority_id":"priority-123\""""));
-    assert (body.contains("""
         "severity_id":"severity-123\""""));
     assert (body.contains("""
-        "status_id":"status-123\""""));
+        "incident_status_id":"status-123\""""));
     assert (body.contains("""
         "visibility":"private\""""));
     assert (body.contains("""
         "slack_team_id":"slack-123\""""));
     assert (body.contains("""
-        "creator_out_of_hours":true"""));
-    assert (body.contains("""
-        "custom_field_values":{"field-1":[{"value":"val-1"}]}"""));
+        "custom_field_entries":[{"custom_field_id":"field-1","values":[{"value_text":"val-1"}]}]"""));
   }
 
   @Test
@@ -105,14 +95,13 @@ final class IncidentIoClientTest {
     final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
-        .description("") // Blank string should be excluded
         .idempotencyKey(null) // Null should be excluded
         .incidentTypeId("type-123")
-        .priorityId("  ") // Blank string should be excluded
+        .severityId("  ") // Blank string should be excluded
         .build();
 
     final String body = request.body();
-    // name, summary, incident_type_id are present. description, idempotency_key, priority_id should be absent.
+    // name, summary, incident_type_id are present. idempotency_key, severity_id should be absent.
     assertEquals("""
         {"name":"Name","summary":"Summary","incident_type_id":"type-123"}""", body
     );
@@ -142,7 +131,6 @@ final class IncidentIoClientTest {
         .incidentTypeId("type-123")
         .mode((String) null)
         .visibility((String) null)
-        .creatorOutOfHours(null)
         .build();
 
     final var body = request.body();

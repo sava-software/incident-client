@@ -8,7 +8,9 @@ public interface EventClientTest extends ClientTest {
     final int port = httpServer.getAddress().getPort();
     final var client = PagerDutyEventClient.clientBuilder()
         .defaultClientName("test-" + port)
-        .endpoint("http://localhost:" + port)
+        // 127.0.0.1, never localhost: a ::1 resolution can reach another JVM's
+        // wildcard bind on the same port number under parallel module runs
+        .endpoint("http://127.0.0.1:" + port)
         .defaultRoutingKey("routing-key-" + port)
         .authToken("auth-token-" + port)
         .createClient();

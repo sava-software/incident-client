@@ -9,6 +9,9 @@ final class ClientTestRunner {
 
   @TestFactory
   List<DynamicTest> runEventClientTests() {
-    return List.of(ClientTests.createTest(new EventClientTests()));
+    return List.of(
+        ClientTests.createTest(new EventClientTests()),
+        ClientTests.createTest(new EventClientEdgeCaseTests())
+    );
   }
 }

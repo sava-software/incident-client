@@ -22,6 +22,7 @@ record PagerDutyLinkRefVal(String href, String text) implements PagerDutyLinkRef
 
     @Override
     public PagerDutyLinkRef create() {
+      java.util.Objects.requireNonNull(href, "'href' is a required link field.");
       return new PagerDutyLinkRefVal(href, text);
     }
 

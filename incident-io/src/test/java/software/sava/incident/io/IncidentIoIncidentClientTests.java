@@ -61,7 +61,7 @@ final class IncidentIoIncidentClientTests {
         .severity(IncidentSeverity.CRITICAL)
         .create());
     assertEquals("""
-        {"idempotency_key":"idem-1","name":"title-1","summary":"description-1","incident_type_id":"type-1","mode":"standard","severity_id":"sev-critical","status_id":"status-1","visibility":"public"}""", request.body()
+        {"idempotency_key":"idem-1","name":"title-1","summary":"description-1","incident_type_id":"type-1","mode":"standard","severity_id":"sev-critical","incident_status_id":"status-1","visibility":"public"}""", request.body()
     );
   }
 
@@ -79,13 +79,13 @@ final class IncidentIoIncidentClientTests {
   }
 
   @Test
-  void nullEnumBuilderValuesAreOmitted() {
+  void nullModeIsOmittedAndVisibilityIsRequired() {
     final var stub = new StubIoClient();
     final var client = (IncidentIoIncidentClient) IncidentIoIncidentClient.build(stub)
         .severityId(IncidentSeverity.ERROR, "sev-error")
         .incidentTypeId("type-1")
         .statusId("status-1")
-        .visibility(null)
+        .visibility(CreateIncidentRequest.Visibility.PUBLIC)
         .mode(null)
         .createClient();
 
@@ -94,8 +94,18 @@ final class IncidentIoIncidentClientTests {
         .summary("title-4")
         .severity(IncidentSeverity.ERROR)
         .create());
-    assertNull(request.visibility());
     assertNull(request.mode());
+    assertEquals("public", request.visibility());
+
+    // the API rejects create requests without a visibility; fail at build time instead.
+    // The setter itself accepts null — the requirement is enforced at createClient.
+    final var missingVisibility = IncidentIoIncidentClient.build(stub)
+        .severityId(IncidentSeverity.ERROR, "sev-error")
+        .incidentTypeId("type-1")
+        .statusId("status-1")
+        .visibility(null);
+    final var thrown = assertThrows(NullPointerException.class, missingVisibility::createClient);
+    assertEquals("'visibility' is required.", thrown.getMessage());
   }
 
   @Test
@@ -166,6 +176,7 @@ final class IncidentIoIncidentClientTests {
     final var stub = new StubIoClient();
     final var client = (IncidentIoIncidentClient) IncidentIoIncidentClient.build(stub)
         .severityIds(Map.of(IncidentSeverity.WARNING, "sev-warning"))
+        .visibility(CreateIncidentRequest.Visibility.PUBLIC)
         .createClient();
     final var request = client.toRequest(IncidentAlert.build()
         .summary("title-5")

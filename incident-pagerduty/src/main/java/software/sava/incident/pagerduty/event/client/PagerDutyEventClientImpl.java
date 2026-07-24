@@ -30,8 +30,6 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
       exception.status(ji.readString());
     } else if (fieldEquals("message", buf, offset, len)) {
       exception.message(ji.readString());
-    } else if (fieldEquals("code", buf, offset, len)) {
-      exception.message(ji.readString());
     } else if (fieldEquals("errors", buf, offset, len)) {
       while (ji.readArray()) {
         exception.error(ji.readString());
@@ -42,7 +40,9 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     return true;
   };
 
-  private static RuntimeException errorResponse(final HttpResponse<?> response) {
+  // package-private for direct tests: the status mapping and envelope parsing are
+  // in-process logic; only the transport methods need a wire to exercise
+  static RuntimeException errorResponse(final HttpResponse<?> response) {
     final var exception = PagerDutyRequestException.build(response);
     final int statusCode = response.statusCode();
     if (statusCode == 429) {
@@ -66,17 +66,10 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     try {
       responseError = ji.testObject(exception, EXCEPTION_PARSER).create();
     } catch (final RuntimeException runtimeCause) {
-      try {
-        throw new PagerDutyParseException(response,
-            String.format("Failed to adapt %d error response: '%s'", statusCode, ji.currentBuffer()),
-            runtimeCause
-        );
-      } catch (final RuntimeException ex) {
-        throw new PagerDutyParseException(response,
-            String.format("Failed to adapt %d error response: '%s'", statusCode, new String(body)),
-            runtimeCause
-        );
-      }
+      throw new PagerDutyParseException(response,
+          String.format("Failed to adapt %d error response: '%s'", statusCode, new String(body)),
+          runtimeCause
+      );
     }
     throw responseError;
   }
@@ -191,6 +184,6 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
 
   @Override
   public String toString() {
-    return "PagerDutyHttpEventClient{defaultClientName='" + defaultClientName + '}';
+    return "PagerDutyEventClientImpl{defaultClientName='" + defaultClientName + "'}";
   }
 }

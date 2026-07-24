@@ -43,7 +43,9 @@ hardening {
   }
   mutation.register("adapter") {
     targetClasses = listOf(
-      "software.sava.incident.pagerduty.event.client.PagerDutyIncidentClient"
+      "software.sava.incident.pagerduty.event.client.PagerDutyIncidentClient",
+      "software.sava.incident.pagerduty.event.client.PagerDutyEventClientImpl",
+      "software.sava.incident.pagerduty.event.client.PagerDutyEventClientImpl\$*"
     )
     targetTests = "software.sava.incident.pagerduty.event.*Test*"
   }

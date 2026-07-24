@@ -14,47 +14,38 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   private final String idempotencyKey;
   private final String name;
   private final String summary;
-  private final String description;
   private final String incidentTypeId;
   private final Collection<IncidentRoleAssignment> incidentRoleAssignments;
   private final String mode;
-  private final String priorityId;
   private final String severityId;
   private final String statusId;
   private final String visibility;
   private final String slackTeamId;
-  private final Boolean creatorOutOfHours;
   private final Map<String, String> customFieldValues;
 
   CreateIncidentRequestRecord(final Duration timeout,
                               final String idempotencyKey,
                               final String name,
                               final String summary,
-                              final String description,
                               final String incidentTypeId,
                               final Collection<IncidentRoleAssignment> incidentRoleAssignments,
                               final String mode,
-                              final String priorityId,
                               final String severityId,
                               final String statusId,
                               final String visibility,
                               final String slackTeamId,
-                              final Boolean creatorOutOfHours,
                               final Map<String, String> customFieldValues) {
     super(timeout);
     this.idempotencyKey = idempotencyKey;
     this.name = name;
     this.summary = summary;
-    this.description = description;
     this.incidentTypeId = incidentTypeId;
     this.incidentRoleAssignments = incidentRoleAssignments;
     this.mode = mode;
-    this.priorityId = priorityId;
     this.severityId = severityId;
     this.statusId = statusId;
     this.visibility = visibility;
     this.slackTeamId = slackTeamId;
-    this.creatorOutOfHours = creatorOutOfHours;
     this.customFieldValues = customFieldValues;
   }
 
@@ -74,11 +65,6 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   }
 
   @Override
-  public String description() {
-    return description;
-  }
-
-  @Override
   public String incidentTypeId() {
     return incidentTypeId;
   }
@@ -91,11 +77,6 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   @Override
   public String mode() {
     return mode;
-  }
-
-  @Override
-  public String priorityId() {
-    return priorityId;
   }
 
   @Override
@@ -119,11 +100,6 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   }
 
   @Override
-  public Boolean creatorOutOfHours() {
-    return creatorOutOfHours;
-  }
-
-  @Override
   public Map<String, String> customFieldValues() {
     return customFieldValues;
   }
@@ -135,7 +111,6 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
     appendField(sb, "idempotency_key", idempotencyKey);
     appendField(sb, "name", name);
     appendField(sb, "summary", summary);
-    appendField(sb, "description", description);
     appendField(sb, "incident_type_id", incidentTypeId);
     // the builder normalizes null collections to empty
     if (!incidentRoleAssignments.isEmpty()) {
@@ -143,38 +118,48 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
       sb.append("""
           "incident_role_assignments":[""");
       sb.append(incidentRoleAssignments.stream()
-          .map(ira -> String.format("""
-                  {"incident_role_id":"%s","assignee_id":"%s"}""",
-              escapeJson(ira.incidentRoleId()), escapeJson(ira.assigneeId())
-          ))
+          .map(CreateIncidentRequestRecord::roleAssignmentJson)
           .collect(Collectors.joining(",")));
       sb.append(']');
     }
     appendField(sb, "mode", mode);
-    appendField(sb, "priority_id", priorityId);
     appendField(sb, "severity_id", severityId);
-    appendField(sb, "status_id", statusId);
+    appendField(sb, "incident_status_id", statusId);
     appendField(sb, "visibility", visibility);
     appendField(sb, "slack_team_id", slackTeamId);
-    if (creatorOutOfHours != null) {
-      if (sb.length() > 1) sb.append(',');
-      sb.append("""
-          "creator_out_of_hours":""").append(creatorOutOfHours);
-    }
     if (!customFieldValues.isEmpty()) {
       if (sb.length() > 1) sb.append(',');
       sb.append("""
-          "custom_field_values":{""");
+          "custom_field_entries":[""");
       sb.append(customFieldValues.entrySet().stream()
           .map(e -> String.format("""
-                  "%s":[{"value":"%s"}]""",
+                  {"custom_field_id":"%s","values":[{"value_text":"%s"}]}""",
               escapeJson(e.getKey()), escapeJson(e.getValue())
           ))
           .collect(Collectors.joining(",")));
-      sb.append('}');
+      sb.append(']');
     }
     sb.append('}');
     return sb.toString();
+  }
+
+  private static String roleAssignmentJson(final IncidentRoleAssignment ira) {
+    final var sb = new StringBuilder(128);
+    sb.append("""
+        {"incident_role_id":"%s\"""".formatted(escapeJson(ira.incidentRoleId())));
+    final var assignee = ira.assignee();
+    if (assignee != null) {
+      // a reference whose fields are all blank is omitted entirely
+      final var ref = new StringBuilder(96);
+      appendField(ref, "id", assignee.id());
+      appendField(ref, "email", assignee.email());
+      appendField(ref, "slack_user_id", assignee.slackUserId());
+      if (!ref.isEmpty()) {
+        sb.append("""
+            ,"assignee":{""").append(ref).append('}');
+      }
+    }
+    return sb.append('}').toString();
   }
 
   private static void appendField(final StringBuilder sb, final String field, final String value) {

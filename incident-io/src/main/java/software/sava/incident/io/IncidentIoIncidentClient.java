@@ -119,6 +119,8 @@ public final class IncidentIoIncidentClient implements IncidentClient {
     }
 
     public IncidentClient createClient() {
+      // the API rejects create requests without a visibility
+      Objects.requireNonNull(visibility, "'visibility' is required.");
       return new IncidentIoIncidentClient(
           client,
           Map.copyOf(severityIds),

@@ -30,6 +30,7 @@ record PagerDutyImageRefVal(String src,
 
     @Override
     public PagerDutyImageRef create() {
+      java.util.Objects.requireNonNull(src, "'src' is a required image field.");
       return new PagerDutyImageRefVal(src, href, alt);
     }
 

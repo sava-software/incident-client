@@ -217,6 +217,13 @@ final class PagerDutyPayloadTests {
   }
 
   @Test
+  void linkHrefAndImageSrcAreRequired() {
+    // the Events API v2 schema marks link 'href' and image 'src' as required
+    assertThrows(NullPointerException.class, () -> PagerDutyLinkRef.build().text("t").create());
+    assertThrows(NullPointerException.class, () -> PagerDutyImageRef.build().href("h").alt("a").create());
+  }
+
+  @Test
   void imageToJsonHrefWithoutAlt() {
     assertEquals("{\"src\":\"s\",\"href\":\"h\"}",
         PagerDutyImageRef.build().src("s").href("h").create().toJson());

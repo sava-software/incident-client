@@ -60,6 +60,15 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   mutated to `>=`: at exactly 1024 chars `substring(0, 1024)` returns the
   same instance (`summaryExactly1024IsNotCopied` pins the identity), so the
   boundary flip is unobservable by construction.
+- `# status-boundary` (adapter: `PagerDutyEventClientImpl` response parser,
+  the `code < 200` arm of the success gate) — the forced-true direction is
+  observable only with a final HTTP status below 200, which
+  `java.net.http.HttpClient` cannot deliver: 1xx interim responses are
+  consumed inside the client, and `jdk.httpserver` refuses to emit them as
+  final. Unreachable in-harness. Escape hatch: a raw socket speaking
+  HTTP/1.1 by hand (sava-build's `LoopbackHttpServer`) could write a
+  literal sub-200 final status line, at the cost of the client blocking
+  until its request timeout.
 - `# always-true-delegate` (config: `PagerDutyConfig$Parser.test:99`) —
   `return super.test(...)` where the superclass either returns true or
   throws on unknown fields; the constant-true mutant preserves the call and
