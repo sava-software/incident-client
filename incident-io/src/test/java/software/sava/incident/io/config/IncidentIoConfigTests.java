@@ -1,6 +1,7 @@
 package software.sava.incident.io.config;
 
 import org.junit.jupiter.api.Test;
+import software.sava.incident.io.IncidentIoClient;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
@@ -22,6 +23,19 @@ final class IncidentIoConfigTests {
     assertNull(builder.endpoint());
     assertNull(builder.requestTimeout());
     assertNotNull(builder.extendRequest());
+  }
+
+  @Test
+  void sparseConfigPreservesBuilderSettings() {
+    final var config = IncidentIoConfig.parseConfig(JsonIterator.parse("""
+        {"bearerToken":"t"}"""));
+    final var builder = IncidentIoClient.clientBuilder()
+        .endpoint(URI.create("https://pre.example.com"))
+        .requestTimeout(Duration.ofSeconds(3));
+    config.createClientBuilder(builder);
+    // absent config values must not overwrite what the builder already holds
+    assertEquals(URI.create("https://pre.example.com"), builder.endpoint());
+    assertEquals(Duration.ofSeconds(3), builder.requestTimeout());
   }
 
   @Test

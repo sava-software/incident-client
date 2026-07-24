@@ -1,9 +1,12 @@
 package software.sava.incident.pagerduty.event.data;
 
+import software.sava.incident.core.json.Rfc3339;
+
 import java.time.ZonedDateTime;
 import java.util.*;
 
 import static java.time.ZoneOffset.UTC;
+import static software.sava.incident.core.json.JsonUtil.escapeJsonRemoveNewLines;
 
 final class PagerDutyEventPayloadBuilder
     extends PagerDutyChangeEventPayloadRecord.PagerDutyChangeEventPayloadBuilder
@@ -170,7 +173,7 @@ final class PagerDutyEventPayloadBuilder
     final var jsonBuilder = new StringBuilder(2_048);
     jsonBuilder.append(String.format("""
             {"summary":"%s","source":"%s","severity":"%s","timestamp":"%s\"""",
-        summary, source, severity, timestamp));
+        escapeJsonRemoveNewLines(summary), escapeJsonRemoveNewLines(source), severity, Rfc3339.format(timestamp)));
     appendString(jsonBuilder, "component", component);
     appendString(jsonBuilder, "group", group);
     appendString(jsonBuilder, "class", type);

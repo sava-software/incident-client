@@ -1,6 +1,7 @@
 package software.sava.incident.pagerduty.config;
 
 import org.junit.jupiter.api.Test;
+import software.sava.incident.pagerduty.event.client.PagerDutyEventClient;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
@@ -41,6 +42,22 @@ final class PagerDutyConfigTests {
     assertEquals("test-auth-token", builder.authToken());
     assertEquals(URI.create("https://events.pagerduty.com"), builder.endpoint());
     assertEquals(Duration.ofSeconds(10), builder.requestTimeout());
+  }
+
+  @Test
+  void sparseConfigPreservesBuilderSettings() {
+    final var config = PagerDutyConfig.parseConfig(JsonIterator.parse("""
+        {"routingKey":"rk"}"""));
+    final var builder = PagerDutyEventClient.clientBuilder()
+        .endpoint(URI.create("https://pre.example.com"))
+        .requestTimeout(Duration.ofSeconds(3))
+        .authToken("pre-token");
+    config.createClientBuilder(builder);
+    // absent config values must not overwrite what the builder already holds
+    assertEquals("rk", builder.defaultRoutingKey());
+    assertEquals(URI.create("https://pre.example.com"), builder.endpoint());
+    assertEquals(Duration.ofSeconds(3), builder.requestTimeout());
+    assertEquals("pre-token", builder.authToken());
   }
 
   @Test

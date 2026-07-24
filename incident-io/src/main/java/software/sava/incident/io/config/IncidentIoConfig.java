@@ -32,10 +32,8 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     if (requestTimeout != null) {
       builder.requestTimeout(requestTimeout);
     }
-    if (bearerToken != null) {
-      builder.bearerToken(bearerToken);
-    }
-    return builder;
+    // bearerToken is validated present at parse time
+    return builder.bearerToken(bearerToken);
   }
 
   public static IncidentIoConfig parseConfig(final Properties properties) {

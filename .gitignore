@@ -22,3 +22,13 @@ gradle-app.setting
 
 .idea
 /symlinks/
+
+# Machine-specific agent guidance (see AGENTS.md)
+AGENTS.local.md
+
+# Jazzer crash reproducers
+crash-*
+Crash_*.java
+
+# arcmutate incremental-analysis history (machine-local, written by the hardening plugin)
+.pitest-history/

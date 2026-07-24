@@ -11,7 +11,7 @@ dependencies {
 tasks.register("publishToGitHubPackages") {
   group = "publishing"
   dependsOn(
-    ":incident-core:publishMavenJavaPublicationToSavaGithubPackagesRepository",
-    ":incident-pagerduty:publishMavenJavaPublicationToSavaGithubPackagesRepository"
+    ":incident-core:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository",
+    ":incident-pagerduty:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository"
   )
 }

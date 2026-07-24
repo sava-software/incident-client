@@ -20,6 +20,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
+import static software.sava.incident.core.json.JsonUtil.escapeJson;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDutyEventClient {
@@ -106,7 +107,7 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
                            final Duration requestTimeout,
                            final UnaryOperator<HttpRequest.Builder> extendRequest,
                            final BiPredicate<HttpResponse<?>, byte[]> testResponse) {
-    super(baseUri, httpClient, requestTimeout, extendRequest, null, testResponse);
+    super(baseUri, httpClient, requestTimeout, extendRequest, testResponse);
     this.defaultClientName = defaultClientName;
     this.defaultClientUrl = defaultClientUrl;
     this.defaultRoutingKey = defaultRoutingKey;
@@ -150,7 +151,7 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     Objects.requireNonNull(dedupKey, "De-duplication key is a required field.");
     final var json = String.format("""
             {"routing_key":"%s","dedup_key":"%s","event_action":"%s"}""",
-        routingKey, dedupKey, eventAction
+        escapeJson(routingKey), escapeJson(dedupKey), eventAction
     );
     return postEvent(eventUri, json);
   }
@@ -165,9 +166,10 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     final var linksJson = payload.linksJson();
     final var imagesJson = payload.imagesJson();
     final var json = String.format("""
-            {"event_action":"trigger","routing_key":"%s","dedup_key":"%s","payload":%s,"client":"%s"%s%s%s}""",
-        routingKey, payload.dedupKey(), payloadJson, clientName,
-        (clientUrl == null ? "" : ",\"client_url\":\"" + clientUrl + '"'),
+            {"event_action":"trigger","routing_key":"%s","dedup_key":"%s","payload":%s%s%s%s%s}""",
+        escapeJson(routingKey), escapeJson(payload.dedupKey()), payloadJson,
+        (clientName == null || clientName.isBlank() ? "" : ",\"client\":\"" + escapeJson(clientName) + '"'),
+        (clientUrl == null || clientUrl.isBlank() ? "" : ",\"client_url\":\"" + escapeJson(clientUrl) + '"'),
         imagesJson, linksJson
     );
     return postEvent(eventUri, json);
@@ -182,7 +184,7 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     final var imagesJson = payload.imagesJson();
     final var json = String.format("""
             {"routing_key":"%s","payload":%s%s%s}""",
-        routingKey, payloadJson, linksJson, imagesJson
+        escapeJson(routingKey), payloadJson, linksJson, imagesJson
     );
     return postEvent(changeEventUri, json);
   }

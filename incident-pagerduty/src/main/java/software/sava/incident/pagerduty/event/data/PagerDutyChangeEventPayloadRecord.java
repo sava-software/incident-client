@@ -1,6 +1,6 @@
 package software.sava.incident.pagerduty.event.data;
 
-import systems.comodal.jsoniter.JIUtil;
+import software.sava.incident.core.json.Rfc3339;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static java.time.ZoneOffset.UTC;
+import static software.sava.incident.core.json.JsonUtil.escapeJsonRemoveNewLines;
 
 record PagerDutyChangeEventPayloadRecord(String summary,
                                          ZonedDateTime timestamp,
@@ -137,7 +138,8 @@ record PagerDutyChangeEventPayloadRecord(String summary,
 
     final Builder customDetailsObject(final String field, final Object fieldValue) {
       final var val = fieldValue == null ? "null" : fieldValue;
-      if (customDetails == null || customDetails.isEmpty()) {
+      // both constructors initialize customDetails; it is never null
+      if (customDetails.isEmpty()) {
         customDetails = Map.of(field, val);
         return this;
       } else if (customDetails.size() == 1) {
@@ -226,7 +228,7 @@ record PagerDutyChangeEventPayloadRecord(String summary,
         jsonBuilder.append(",\"");
         jsonBuilder.append(field);
         jsonBuilder.append("\":\"");
-        jsonBuilder.append(str);
+        jsonBuilder.append(escapeJsonRemoveNewLines(str));
         jsonBuilder.append('"');
       }
     }
@@ -242,10 +244,10 @@ record PagerDutyChangeEventPayloadRecord(String summary,
           case Boolean bool -> bool;
           case Object obj -> {
             final var str = obj.toString();
-            yield JIUtil.escapeQuotesRemoveNewLinesChecked(str);
+            yield escapeJsonRemoveNewLines(str);
           }
         };
-        final var key = entry.getKey();
+        final var key = escapeJsonRemoveNewLines(entry.getKey());
         return switch (stringOrRawVal) {
           case null -> String.format("""
               "%s":null""", key
@@ -265,10 +267,10 @@ record PagerDutyChangeEventPayloadRecord(String summary,
       final var jsonBuilder = new StringBuilder(2_048);
       jsonBuilder.append(String.format("""
               {"summary":"%s\"""",
-          summary
+          escapeJsonRemoveNewLines(summary)
       ));
       appendString(jsonBuilder, "source", source);
-      appendString(jsonBuilder, "timestamp", timestamp.toString());
+      appendString(jsonBuilder, "timestamp", Rfc3339.format(timestamp));
       if (!customDetails.isEmpty()) {
         jsonBuilder.append("""
             ,"custom_details":""");

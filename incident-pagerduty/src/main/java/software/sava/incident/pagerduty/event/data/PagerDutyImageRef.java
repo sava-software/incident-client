@@ -1,5 +1,7 @@
 package software.sava.incident.pagerduty.event.data;
 
+import static software.sava.incident.core.json.JsonUtil.escapeJsonRemoveNewLines;
+
 public interface PagerDutyImageRef {
 
   static Builder build() {
@@ -13,22 +15,23 @@ public interface PagerDutyImageRef {
   String alt();
 
   default String toJson() {
+    final var src = escapeJsonRemoveNewLines(src());
     final var href = href();
     final var alt = alt();
     if (href == null || href.isBlank()) {
       if (alt == null || alt.isBlank()) {
         return String.format("""
-            {"src":"%s"}""", src());
+            {"src":"%s"}""", src);
       } else {
         return String.format("""
-            {"src":"%s","alt":"%s"}""", src(), alt);
+            {"src":"%s","alt":"%s"}""", src, escapeJsonRemoveNewLines(alt));
       }
     } else if (alt == null || alt.isBlank()) {
       return String.format("""
-          {"src":"%s","href":"%s"}""", src(), href);
+          {"src":"%s","href":"%s"}""", src, escapeJsonRemoveNewLines(href));
     } else {
       return String.format("""
-          {"src":"%s","href":"%s","alt":"%s"}""", src(), href, alt);
+          {"src":"%s","href":"%s","alt":"%s"}""", src, escapeJsonRemoveNewLines(href), escapeJsonRemoveNewLines(alt));
     }
   }
 

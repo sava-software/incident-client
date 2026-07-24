@@ -128,4 +128,32 @@ final class HttpApiClientConfigTests {
     assertEquals(URI.create("https://api.example.com"), config.endpoint());
     assertEquals(Duration.ofSeconds(5), config.requestTimeout());
   }
+
+  @Test
+  void parsePropertiesWithoutEndpoint() {
+    final var properties = new Properties();
+    properties.setProperty("requestTimeout", "PT5S");
+    final var config = TestConfig.parseConfig(properties);
+    assertNull(config.endpoint());
+    assertEquals(Duration.ofSeconds(5), config.requestTimeout());
+  }
+
+  @Test
+  void parseJsonBlankValuesAreNull() {
+    final var json = """
+        {"endpoint":"  ","requestTimeout":"  "}""";
+    final var config = TestConfig.parseConfig(JsonIterator.parse(json));
+    assertNull(config.endpoint());
+    assertNull(config.requestTimeout());
+  }
+
+  @Test
+  void parsePropertiesBlankValuesAreNull() {
+    final var properties = new Properties();
+    properties.setProperty("endpoint", "");
+    properties.setProperty("requestTimeout", "");
+    final var config = TestConfig.parseConfig(properties);
+    assertNull(config.endpoint());
+    assertNull(config.requestTimeout());
+  }
 }

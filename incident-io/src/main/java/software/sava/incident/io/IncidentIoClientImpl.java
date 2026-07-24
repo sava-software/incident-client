@@ -1,5 +1,7 @@
 package software.sava.incident.io;
 
+import software.sava.incident.io.exceptions.IncidentIoParseException;
+import software.sava.incident.io.exceptions.IncidentIoRequestException;
 import software.sava.rpc.json.http.client.JsonHttpClient;
 import systems.comodal.jsoniter.JsonIterator;
 
@@ -18,14 +20,28 @@ import static java.util.Objects.requireNonNullElse;
 final class IncidentIoClientImpl extends JsonHttpClient implements IncidentIoClient {
 
   private static final Function<HttpResponse<?>, CreateIncidentResponse> CREATE_INCIDENT_RESPONSE_PARSER =
-      httpResponse -> CreateIncidentResponseRecord.parse(JsonIterator.parse(readBody(httpResponse)));
+      httpResponse -> {
+        final byte[] body = readBody(httpResponse);
+        final int statusCode = httpResponse.statusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+          throw IncidentIoRequestException.parse(httpResponse, body);
+        }
+        try {
+          return CreateIncidentResponseRecord.parse(JsonIterator.parse(body));
+        } catch (final RuntimeException parseCause) {
+          throw new IncidentIoParseException(httpResponse,
+              String.format("Failed to adapt %d response: '%s'", statusCode, new String(body)),
+              parseCause
+          );
+        }
+      };
 
   IncidentIoClientImpl(final URI endpoint,
                        final HttpClient httpClient,
                        final Duration requestTimeout,
                        final UnaryOperator<HttpRequest.Builder> extendRequest,
                        final BiPredicate<HttpResponse<?>, byte[]> testResponse) {
-    super(endpoint, httpClient, requestTimeout, extendRequest, null, testResponse);
+    super(endpoint, httpClient, requestTimeout, extendRequest, testResponse);
   }
 
   @Override

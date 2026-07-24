@@ -7,6 +7,8 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static software.sava.incident.core.json.JsonUtil.escapeJson;
+
 final class CreateIncidentRequestRecord extends BaseRequest implements CreateIncidentRequest {
 
   private final String idempotencyKey;
@@ -135,7 +137,8 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
     appendField(sb, "summary", summary);
     appendField(sb, "description", description);
     appendField(sb, "incident_type_id", incidentTypeId);
-    if (incidentRoleAssignments != null && !incidentRoleAssignments.isEmpty()) {
+    // the builder normalizes null collections to empty
+    if (!incidentRoleAssignments.isEmpty()) {
       if (sb.length() > 1) sb.append(',');
       sb.append("""
           "incident_role_assignments":[""");
@@ -158,7 +161,7 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
       sb.append("""
           "creator_out_of_hours":""").append(creatorOutOfHours);
     }
-    if (customFieldValues != null && !customFieldValues.isEmpty()) {
+    if (!customFieldValues.isEmpty()) {
       if (sb.length() > 1) sb.append(',');
       sb.append("""
           "custom_field_values":{""");
@@ -180,19 +183,5 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
       sb.append('"').append(field).append("""
           ":"%s\"""".formatted(escapeJson(value)));
     }
-  }
-
-  private static String escapeJson(final String s) {
-    if (s == null) return "";
-    return s.replace("\\", "\\\\")
-        .replace("""
-            \"""", """
-            \\\""""
-        )
-        .replace("\b", "\\b")
-        .replace("\f", "\\f")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t");
   }
 }

@@ -1,5 +1,7 @@
 package software.sava.incident.pagerduty.event.data;
 
+import static software.sava.incident.core.json.JsonUtil.escapeJsonRemoveNewLines;
+
 public interface PagerDutyLinkRef {
 
   static Builder build() {
@@ -14,10 +16,10 @@ public interface PagerDutyLinkRef {
     final var text = text();
     if (text == null || text.isBlank()) {
       return String.format("""
-          {"href":"%s"}""", href());
+          {"href":"%s"}""", escapeJsonRemoveNewLines(href()));
     } else {
       return String.format("""
-          {"href":"%s","text":"%s"}""", href(), text);
+          {"href":"%s","text":"%s"}""", escapeJsonRemoveNewLines(href()), escapeJsonRemoveNewLines(text));
     }
   }
 
