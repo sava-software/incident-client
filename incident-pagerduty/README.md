@@ -7,11 +7,11 @@ supported against the latest GA OpenJDK release.
 ## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/PagerdutyExamples.java)
 
 ```java
-var client = PagerDutyEventClient.build()
+final var client = PagerDutyEventClient.clientBuilder()
     .defaultClientName("CLIENT_NAME")
     .defaultRoutingKey("INTEGRATION_KEY")
     .authToken("AUTH_TOKEN")
-    .create();
+    .createClient();
 
 final var bigInteger = new BigInteger("20988936657440586486151264256610222593863921");
 final var payload = PagerDutyEventPayload.build()

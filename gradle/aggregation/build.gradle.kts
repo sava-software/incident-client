@@ -5,6 +5,8 @@ plugins {
 dependencies {
   nmcpAggregation(project(":incident-core"))
 //  nmcpAggregation(project(":incident-io"))
+  nmcpAggregation(project(":incident-io"))
+//  nmcpAggregation(project(":incident-io"))
   nmcpAggregation(project(":incident-pagerduty"))
 }
 
