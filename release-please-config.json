@@ -6,7 +6,7 @@
   "versioning": "always-bump-patch",
   "packages": {
     ".": {
-      "package-name": "http-servers"
+      "package-name": "incident-client"
     }
   }
 }
