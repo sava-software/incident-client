@@ -134,6 +134,18 @@ Conventions to preserve:
   inside `test` (and under PIT), and fails on an empty corpus. Committed seeds must
   not exceed the target's `maxLen` — the fuzz and minimize tasks refuse up front
   rather than let libFuzzer silently truncate the seed.
+- Every fuzz target declares a `seedCorpus` (as of sava-build 21.5.15,
+  `generateFuzzReplayTests` names any that don't). A corpus does two independent
+  jobs: *bootstrap* (coverage a mutator would take too long to reach — the
+  `response` corpus) and *regression* (a committed landing place for findings —
+  the `request` and `payload` corpora; expect these to change no mutation score).
+  "The mutator reaches this format from scratch" answers only the bootstrap
+  question. Where genuinely neither applies, record `declineSeedCorpus("...")`
+  with a measured reason; same for advised-but-declined mutators via
+  `declineMutator(name, reason)`. Blank reasons suppress nothing and are
+  reported; stale declines (target gained a corpus, mutator got enabled) are
+  flagged as deletable. Seed provenance goes in a README next to — never
+  inside — the corpus dir.
 - Copy-on-write builder survivors (`size() > 1 ? copy : as-is`) split by
   direction: the content-equal siblings are accepted `# copy-on-write` /
   `# defensive-copy` equivalents, but the mutable-escape direction is killed

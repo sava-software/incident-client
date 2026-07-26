@@ -54,6 +54,9 @@ hardening {
     // payload fields are short human-entered strings; every escaping boundary lives in
     // small inputs
     maxLen = 2048
+    // regression corpus, not bootstrap: the mutator reaches this flat NUL-delimited
+    // format from scratch, but a finding still needs a committed seed replayed by check
+    seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/payload")
   }
 }
 
