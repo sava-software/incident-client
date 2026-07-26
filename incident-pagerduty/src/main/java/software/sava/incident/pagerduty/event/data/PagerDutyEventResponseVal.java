@@ -1,8 +1,7 @@
 package software.sava.incident.pagerduty.event.data;
 
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
-
-import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 record PagerDutyEventResponseVal(String status,
                                  String message,
@@ -24,6 +23,8 @@ record PagerDutyEventResponseVal(String status,
   }
 
   static final class PagerDutyEventResponseParser implements Parser {
+
+    private static final FieldMatcher FIELDS = FieldMatcher.of("status", "message", "dedup_key");
 
     private String status;
     private String message;
@@ -78,15 +79,18 @@ record PagerDutyEventResponseVal(String status,
     }
 
     @Override
-    public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
-      if (fieldEquals("status", buf, offset, len)) {
-        this.status = ji.readString();
-      } else if (fieldEquals("message", buf, offset, len)) {
-        this.message = ji.readString();
-      } else if (fieldEquals("dedup_key", buf, offset, len)) {
-        this.dedupKey = ji.readString();
-      } else {
-        ji.skip();
+    public Parser parse(final JsonIterator ji) {
+      ji.testObject(FIELDS, this);
+      return this;
+    }
+
+    @Override
+    public boolean test(final int fieldIndex, final JsonIterator ji) {
+      switch (fieldIndex) {
+        case 0 -> this.status = ji.readString();
+        case 1 -> this.message = ji.readString();
+        case 2 -> this.dedupKey = ji.readString();
+        default -> ji.skip();
       }
       return true;
     }

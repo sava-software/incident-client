@@ -1,6 +1,7 @@
 package software.sava.incident.pagerduty.event.data;
 
-import systems.comodal.jsoniter.FieldBufferPredicate;
+import systems.comodal.jsoniter.FieldIndexPredicate;
+import systems.comodal.jsoniter.JsonIterator;
 
 public interface PagerDutyEventResponse {
 
@@ -14,7 +15,10 @@ public interface PagerDutyEventResponse {
 
   String dedupKey();
 
-  interface Parser extends PagerDutyEventResponse, FieldBufferPredicate {
+  interface Parser extends PagerDutyEventResponse, FieldIndexPredicate {
+
+    /// Parses the response object `ji` is positioned at into this parser's fields.
+    Parser parse(final JsonIterator ji);
 
     PagerDutyEventResponse create();
 

@@ -1,14 +1,14 @@
 package software.sava.incident.io.exceptions;
 
 import software.sava.incident.core.api.IncidentClientException;
+import systems.comodal.jsoniter.FieldIndexPredicate;
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 /// A non-2xx incident.io response, carrying the parsed error envelope:
 /// `{"type": ..., "status": ..., "request_id": ..., "errors": [{"code": ..., "message": ...}]}`
@@ -37,7 +37,7 @@ public final class IncidentIoRequestException extends RuntimeException implement
   public static IncidentIoRequestException parse(final HttpResponse<?> httpResponse, final byte[] body) {
     final var parser = new Parser();
     try {
-      JsonIterator.parse(body).testObject(parser);
+      JsonIterator.parse(body).testObject(Parser.FIELDS, parser);
     } catch (final RuntimeException parseCause) {
       throw new IncidentIoParseException(httpResponse,
           String.format("Failed to adapt %d error response: '%s'",
@@ -89,7 +89,10 @@ public final class IncidentIoRequestException extends RuntimeException implement
         ", httpResponse=" + httpResponse + '}';
   }
 
-  private static final class Parser implements systems.comodal.jsoniter.FieldBufferPredicate {
+  private static final class Parser implements FieldIndexPredicate {
+
+    static final FieldMatcher FIELDS = FieldMatcher.of("type", "status", "request_id", "errors");
+    private static final FieldMatcher ERROR_FIELDS = FieldMatcher.of("code", "message");
 
     private String type;
     private String requestId;
@@ -118,38 +121,34 @@ public final class IncidentIoRequestException extends RuntimeException implement
     }
 
     @Override
-    public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
-      if (fieldEquals("type", buf, offset, len)) {
-        this.type = ji.readString();
-      } else if (fieldEquals("status", buf, offset, len)) {
-        this.errorCode = ji.readLong();
-      } else if (fieldEquals("request_id", buf, offset, len)) {
-        this.requestId = ji.readString();
-      } else if (fieldEquals("errors", buf, offset, len)) {
-        while (ji.readArray()) {
-          final var error = new Object() {
-            String code, message;
-          };
-          ji.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("code", buf2, offset2, len2)) {
-              error.code = ji2.readString();
-            } else if (fieldEquals("message", buf2, offset2, len2)) {
-              error.message = ji2.readString();
+    public boolean test(final int fieldIndex, final JsonIterator ji) {
+      switch (fieldIndex) {
+        case 0 -> this.type = ji.readString();
+        case 1 -> this.errorCode = ji.readLong();
+        case 2 -> this.requestId = ji.readString();
+        case 3 -> {
+          while (ji.readArray()) {
+            final var error = new Object() {
+              String code, message;
+            };
+            ji.testObject(ERROR_FIELDS, (errorField, ji2) -> {
+              switch (errorField) {
+                case 0 -> error.code = ji2.readString();
+                case 1 -> error.message = ji2.readString();
+                default -> ji2.skip();
+              }
+              return true;
+            });
+            if (error.code == null) {
+              addError(error.message == null ? "unknown error" : error.message);
+            } else if (error.message == null) {
+              addError(error.code);
             } else {
-              ji2.skip();
+              addError(error.code + ": " + error.message);
             }
-            return true;
-          });
-          if (error.code == null) {
-            addError(error.message == null ? "unknown error" : error.message);
-          } else if (error.message == null) {
-            addError(error.code);
-          } else {
-            addError(error.code + ": " + error.message);
           }
         }
-      } else {
-        ji.skip();
+        default -> ji.skip();
       }
       return true;
     }

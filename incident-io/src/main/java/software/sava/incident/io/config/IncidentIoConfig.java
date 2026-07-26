@@ -5,12 +5,13 @@ import software.sava.incident.core.config.HttpApiClientConfig;
 import software.sava.incident.io.CreateIncidentRequest;
 import software.sava.incident.io.IncidentIoClient;
 import software.sava.incident.io.IncidentIoIncidentClient;
+import systems.comodal.jsoniter.CharBufferFunction;
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.EnumMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -115,6 +116,34 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
 
   private static final class Parser extends HttpApiClientConfig.Parser {
 
+    /// Case-insensitive enum-value matcher that fails loudly: a config with an unknown
+    /// value should error at parse time, not surface later as a silently absent mapping.
+    private static <E extends Enum<E>> CharBufferFunction<E> strictMatcher(final E[] values, final String what) {
+      final var matcher = FieldMatcher.enumMatcherIgnoreCase(values);
+      return (buf, offset, len) -> {
+        final var value = matcher.apply(buf, offset, len);
+        if (value == null) {
+          throw new IllegalStateException("Unknown " + what + " '" + new String(buf, offset, len) + "'.");
+        }
+        return value;
+      };
+    }
+
+    private static final CharBufferFunction<IncidentSeverity> SEVERITY_PARSER =
+        strictMatcher(IncidentSeverity.values(), "IncidentSeverity");
+    private static final CharBufferFunction<CreateIncidentRequest.Visibility> VISIBILITY_PARSER =
+        strictMatcher(CreateIncidentRequest.Visibility.values(), "visibility");
+    private static final CharBufferFunction<CreateIncidentRequest.Mode> MODE_PARSER =
+        strictMatcher(CreateIncidentRequest.Mode.values(), "mode");
+
+    private static <E> E parseEnum(final CharBufferFunction<E> parser, final String value) {
+      if (value == null || value.isBlank()) {
+        return null;
+      }
+      final var trimmed = value.trim();
+      return parser.apply(trimmed.toCharArray(), 0, trimmed.length());
+    }
+
     private String bearerToken;
     private final Map<IncidentSeverity, String> severityIds;
     private String incidentTypeId;
@@ -143,22 +172,6 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
       );
     }
 
-    private static IncidentSeverity parseSeverity(final String severity) {
-      return IncidentSeverity.valueOf(severity.toUpperCase(Locale.ENGLISH));
-    }
-
-    private static CreateIncidentRequest.Visibility parseVisibility(final String visibility) {
-      return visibility == null || visibility.isBlank()
-          ? null
-          : CreateIncidentRequest.Visibility.valueOf(visibility.trim().toUpperCase(Locale.ENGLISH));
-    }
-
-    private static CreateIncidentRequest.Mode parseMode(final String mode) {
-      return mode == null || mode.isBlank()
-          ? null
-          : CreateIncidentRequest.Mode.valueOf(mode.trim().toLowerCase(Locale.ENGLISH));
-    }
-
     @Override
     protected void parseConfig(final Properties properties) {
       super.parseConfig(properties);
@@ -171,8 +184,8 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
       }
       this.incidentTypeId = properties.getProperty(prefix + "incidentTypeId");
       this.statusId = properties.getProperty(prefix + "statusId");
-      this.visibility = parseVisibility(properties.getProperty(prefix + "visibility"));
-      this.mode = parseMode(properties.getProperty(prefix + "mode"));
+      this.visibility = parseEnum(VISIBILITY_PARSER, properties.getProperty(prefix + "visibility"));
+      this.mode = parseEnum(MODE_PARSER, properties.getProperty(prefix + "mode"));
     }
 
     @Override
@@ -180,18 +193,15 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
       if (fieldEquals("bearerToken", buf, offset, len)) {
         this.bearerToken = ji.readString();
       } else if (fieldEquals("severityIds", buf, offset, len)) {
-        ji.testObject((sevBuf, sevOffset, sevLen, sevJi) -> {
-          severityIds.put(parseSeverity(new String(sevBuf, sevOffset, sevLen)), sevJi.readString());
-          return true;
-        });
+        ji.readMap(severityIds, SEVERITY_PARSER, (severity, sevJi) -> sevJi.readString());
       } else if (fieldEquals("incidentTypeId", buf, offset, len)) {
         this.incidentTypeId = ji.readString();
       } else if (fieldEquals("statusId", buf, offset, len)) {
         this.statusId = ji.readString();
       } else if (fieldEquals("visibility", buf, offset, len)) {
-        this.visibility = parseVisibility(ji.readString());
+        this.visibility = ji.applyChars(VISIBILITY_PARSER);
       } else if (fieldEquals("mode", buf, offset, len)) {
-        this.mode = parseMode(ji.readString());
+        this.mode = ji.applyChars(MODE_PARSER);
       } else {
         return super.test(buf, offset, len, ji);
       }

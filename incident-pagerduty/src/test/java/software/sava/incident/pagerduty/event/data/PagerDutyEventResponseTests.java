@@ -9,9 +9,8 @@ final class PagerDutyEventResponseTests {
 
   @Test
   void parseResponse() {
-    final var parser = PagerDutyEventResponse.parser();
-    JsonIterator.parse("""
-        {"status":"success","message":"Event processed","dedup_key":"dk-1","unknown":[1,2]}""").testObject(parser);
+    final var parser = PagerDutyEventResponse.parser().parse(JsonIterator.parse("""
+        {"status":"success","message":"Event processed","dedup_key":"dk-1","unknown":[1,2]}"""));
 
     assertEquals("success", parser.status());
     assertEquals("Event processed", parser.message());
@@ -42,9 +41,7 @@ final class PagerDutyEventResponseTests {
 
   @Test
   void parseEmptyResponse() {
-    final var parser = PagerDutyEventResponse.parser();
-    JsonIterator.parse("{}").testObject(parser);
-    final var response = parser.create();
+    final var response = PagerDutyEventResponse.parser().parse(JsonIterator.parse("{}")).create();
     assertNull(response.status());
     assertNull(response.message());
     assertNull(response.dedupKey());

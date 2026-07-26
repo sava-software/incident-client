@@ -1,14 +1,14 @@
 package software.sava.incident.io;
 
-import systems.comodal.jsoniter.FieldBufferPredicate;
+import systems.comodal.jsoniter.CharBufferFunction;
+import systems.comodal.jsoniter.FieldIndexPredicate;
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-
-import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 public record CreateIncidentResponseRecord(String callUrl,
                                            OffsetDateTime createdAt,
@@ -39,11 +39,13 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            Double workloadMinutesTotal,
                                            Double workloadMinutesWorking) implements CreateIncidentResponse {
 
+  private static final FieldMatcher ENVELOPE_FIELDS = FieldMatcher.of("incident");
+
   public static CreateIncidentResponseRecord parse(final JsonIterator ji) {
     final var parser = new Parser();
-    ji.testObject((buf, offset, len, ji1) -> {
-      if (fieldEquals("incident", buf, offset, len)) {
-        ji1.testObject(parser);
+    ji.testObject(ENVELOPE_FIELDS, (fieldIndex, ji1) -> {
+      if (fieldIndex == 0) {
+        ji1.testObject(Parser.FIELDS, parser);
       } else {
         ji1.skip();
       }
@@ -52,7 +54,64 @@ public record CreateIncidentResponseRecord(String callUrl,
     return parser.create();
   }
 
-  private static final class Parser implements FieldBufferPredicate {
+  private static final class Parser implements FieldIndexPredicate {
+
+    static final FieldMatcher FIELDS = FieldMatcher.of(
+        "call_url",
+        "created_at",
+        "creator",
+        "custom_field_entries",
+        "duration_metrics",
+        "external_issue_reference",
+        "has_debrief",
+        "id",
+        "incident_role_assignments",
+        "incident_status",
+        "incident_timestamp_values",
+        "incident_type",
+        "mode",
+        "name",
+        "permalink",
+        "postmortem_document_url",
+        "reference",
+        "severity",
+        "slack_channel_id",
+        "slack_channel_name",
+        "slack_team_id",
+        "summary",
+        "updated_at",
+        "visibility",
+        "workload_minutes_late",
+        "workload_minutes_sleeping",
+        "workload_minutes_total",
+        "workload_minutes_working"
+    );
+
+    // the inner "user" object holds the same first four fields; the outer lambda alone
+    // handles index 4
+    private static final FieldMatcher ACTOR_FIELDS = FieldMatcher.of(
+        "email", "id", "name", "slack_user_id", "user"
+    );
+    private static final FieldMatcher CUSTOM_FIELD_ENTRY_FIELDS = FieldMatcher.of("custom_field", "values");
+    private static final FieldMatcher CUSTOM_FIELD_FIELDS = FieldMatcher.of("id", "name", "field_type");
+    private static final FieldMatcher VALUE_TEXT_FIELDS = FieldMatcher.of("value_text");
+    private static final FieldMatcher DURATION_METRIC_ENTRY_FIELDS = FieldMatcher.of("duration_metric", "value_seconds");
+    private static final FieldMatcher ID_NAME_FIELDS = FieldMatcher.of("id", "name");
+    private static final FieldMatcher EXTERNAL_ISSUE_FIELDS = FieldMatcher.of(
+        "issue_id", "issue_reference", "issue_name", "issue_permalink", "provider"
+    );
+    private static final FieldMatcher ROLE_ASSIGNMENT_FIELDS = FieldMatcher.of("assignee", "role");
+    private static final FieldMatcher ROLE_FIELDS = FieldMatcher.of("id", "name", "description", "role_type");
+    private static final FieldMatcher STATUS_FIELDS = FieldMatcher.of("id", "name", "description", "category");
+    private static final FieldMatcher ID_NAME_DESCRIPTION_FIELDS = FieldMatcher.of("id", "name", "description");
+    private static final FieldMatcher TIMESTAMP_ENTRY_FIELDS = FieldMatcher.of("incident_timestamp", "value");
+    private static final FieldMatcher VALUE_FIELDS = FieldMatcher.of("value");
+
+    // unknown wire values resolve to null rather than throwing, matching the parser's
+    // skip-unknown-fields policy
+    private static final CharBufferFunction<Mode> MODE_PARSER = FieldMatcher.enumMatcher(Mode.values());
+    private static final CharBufferFunction<Visibility> VISIBILITY_PARSER =
+        FieldMatcher.enumMatcherIgnoreCase(Visibility.values());
 
     private String callUrl;
     private OffsetDateTime createdAt;
@@ -117,77 +176,57 @@ public record CreateIncidentResponseRecord(String callUrl,
     }
 
     @Override
-    public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
-      if (fieldEquals("call_url", buf, offset, len)) {
-        callUrl = ji.readString();
-      } else if (fieldEquals("created_at", buf, offset, len)) {
-        createdAt = OffsetDateTime.parse(ji.readString());
-      } else if (fieldEquals("creator", buf, offset, len)) {
-        creator = parseActorV2(ji);
-      } else if (fieldEquals("custom_field_entries", buf, offset, len)) {
-        customFieldEntries = new ArrayList<>();
-        while (ji.readArray()) {
-          customFieldEntries.add(parseCustomFieldEntryV2(ji));
+    public boolean test(final int fieldIndex, final JsonIterator ji) {
+      switch (fieldIndex) {
+        case 0 -> callUrl = ji.readString();
+        case 1 -> createdAt = OffsetDateTime.parse(ji.readString());
+        case 2 -> creator = parseActorV2(ji);
+        case 3 -> {
+          customFieldEntries = new ArrayList<>();
+          while (ji.readArray()) {
+            customFieldEntries.add(parseCustomFieldEntryV2(ji));
+          }
         }
-      } else if (fieldEquals("duration_metrics", buf, offset, len)) {
-        durationMetrics = new ArrayList<>();
-        while (ji.readArray()) {
-          durationMetrics.add(parseDurationMetricV2(ji));
+        case 4 -> {
+          durationMetrics = new ArrayList<>();
+          while (ji.readArray()) {
+            durationMetrics.add(parseDurationMetricV2(ji));
+          }
         }
-      } else if (fieldEquals("external_issue_reference", buf, offset, len)) {
-        externalIssueReference = parseExternalIssueReferenceV2(ji);
-      } else if (fieldEquals("has_debrief", buf, offset, len)) {
-        hasDebrief = ji.readBoolean();
-      } else if (fieldEquals("id", buf, offset, len)) {
-        id = ji.readString();
-      } else if (fieldEquals("incident_role_assignments", buf, offset, len)) {
-        incidentRoleAssignments = new ArrayList<>();
-        while (ji.readArray()) {
-          incidentRoleAssignments.add(parseIncidentRoleAssignmentV2(ji));
+        case 5 -> externalIssueReference = parseExternalIssueReferenceV2(ji);
+        case 6 -> hasDebrief = ji.readBoolean();
+        case 7 -> id = ji.readString();
+        case 8 -> {
+          incidentRoleAssignments = new ArrayList<>();
+          while (ji.readArray()) {
+            incidentRoleAssignments.add(parseIncidentRoleAssignmentV2(ji));
+          }
         }
-      } else if (fieldEquals("incident_status", buf, offset, len)) {
-        incidentStatus = parseIncidentStatusV2(ji);
-      } else if (fieldEquals("incident_timestamp_values", buf, offset, len)) {
-        incidentTimestampValues = new ArrayList<>();
-        while (ji.readArray()) {
-          incidentTimestampValues.add(parseIncidentTimestampWithValueV2(ji));
+        case 9 -> incidentStatus = parseIncidentStatusV2(ji);
+        case 10 -> {
+          incidentTimestampValues = new ArrayList<>();
+          while (ji.readArray()) {
+            incidentTimestampValues.add(parseIncidentTimestampWithValueV2(ji));
+          }
         }
-      } else if (fieldEquals("incident_type", buf, offset, len)) {
-        incidentType = parseIncidentTypeV2(ji);
-      } else if (fieldEquals("mode", buf, offset, len)) {
-        mode = Mode.valueOf(ji.readString());
-      } else if (fieldEquals("name", buf, offset, len)) {
-        name = ji.readString();
-      } else if (fieldEquals("permalink", buf, offset, len)) {
-        permalink = ji.readString();
-      } else if (fieldEquals("postmortem_document_url", buf, offset, len)) {
-        postmortemDocumentUrl = ji.readString();
-      } else if (fieldEquals("reference", buf, offset, len)) {
-        reference = ji.readString();
-      } else if (fieldEquals("severity", buf, offset, len)) {
-        severity = parseSeverityV2(ji);
-      } else if (fieldEquals("slack_channel_id", buf, offset, len)) {
-        slackChannelId = ji.readString();
-      } else if (fieldEquals("slack_channel_name", buf, offset, len)) {
-        slackChannelName = ji.readString();
-      } else if (fieldEquals("slack_team_id", buf, offset, len)) {
-        slackTeamId = ji.readString();
-      } else if (fieldEquals("summary", buf, offset, len)) {
-        summary = ji.readString();
-      } else if (fieldEquals("updated_at", buf, offset, len)) {
-        updatedAt = OffsetDateTime.parse(ji.readString());
-      } else if (fieldEquals("visibility", buf, offset, len)) {
-        visibility = Visibility.valueOf(ji.readString().toUpperCase());
-      } else if (fieldEquals("workload_minutes_late", buf, offset, len)) {
-        workloadMinutesLate = ji.readDouble();
-      } else if (fieldEquals("workload_minutes_sleeping", buf, offset, len)) {
-        workloadMinutesSleeping = ji.readDouble();
-      } else if (fieldEquals("workload_minutes_total", buf, offset, len)) {
-        workloadMinutesTotal = ji.readDouble();
-      } else if (fieldEquals("workload_minutes_working", buf, offset, len)) {
-        workloadMinutesWorking = ji.readDouble();
-      } else {
-        ji.skip();
+        case 11 -> incidentType = parseIncidentTypeV2(ji);
+        case 12 -> mode = ji.applyChars(MODE_PARSER);
+        case 13 -> name = ji.readString();
+        case 14 -> permalink = ji.readString();
+        case 15 -> postmortemDocumentUrl = ji.readString();
+        case 16 -> reference = ji.readString();
+        case 17 -> severity = parseSeverityV2(ji);
+        case 18 -> slackChannelId = ji.readString();
+        case 19 -> slackChannelName = ji.readString();
+        case 20 -> slackTeamId = ji.readString();
+        case 21 -> summary = ji.readString();
+        case 22 -> updatedAt = OffsetDateTime.parse(ji.readString());
+        case 23 -> visibility = ji.applyChars(VISIBILITY_PARSER);
+        case 24 -> workloadMinutesLate = ji.readDouble();
+        case 25 -> workloadMinutesSleeping = ji.readDouble();
+        case 26 -> workloadMinutesTotal = ji.readDouble();
+        case 27 -> workloadMinutesWorking = ji.readDouble();
+        default -> ji.skip();
       }
       return true;
     }
@@ -196,32 +235,23 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String email, id, name, slackUserId;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("email", buf, offset, len)) {
-          p.email = ji1.readString();
-        } else if (fieldEquals("id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("name", buf, offset, len)) {
-          p.name = ji1.readString();
-        } else if (fieldEquals("slack_user_id", buf, offset, len)) {
-          p.slackUserId = ji1.readString();
-        } else if (fieldEquals("user", buf, offset, len)) {
-          ji1.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("email", buf2, offset2, len2)) {
-              p.email = ji2.readString();
-            } else if (fieldEquals("id", buf2, offset2, len2)) {
-              p.id = ji2.readString();
-            } else if (fieldEquals("name", buf2, offset2, len2)) {
-              p.name = ji2.readString();
-            } else if (fieldEquals("slack_user_id", buf2, offset2, len2)) {
-              p.slackUserId = ji2.readString();
-            } else {
-              ji2.skip();
+      ji.testObject(ACTOR_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.email = ji1.readString();
+          case 1 -> p.id = ji1.readString();
+          case 2 -> p.name = ji1.readString();
+          case 3 -> p.slackUserId = ji1.readString();
+          case 4 -> ji1.testObject(ACTOR_FIELDS, (userField, ji2) -> {
+            switch (userField) {
+              case 0 -> p.email = ji2.readString();
+              case 1 -> p.id = ji2.readString();
+              case 2 -> p.name = ji2.readString();
+              case 3 -> p.slackUserId = ji2.readString();
+              default -> ji2.skip();
             }
             return true;
           });
-        } else {
-          ji1.skip();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -233,35 +263,32 @@ public record CreateIncidentResponseRecord(String callUrl,
         String customFieldId, customFieldName, customFieldType;
         Object value;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("custom_field", buf, offset, len)) {
-          ji1.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("id", buf2, offset2, len2)) {
-              p.customFieldId = ji2.readString();
-            } else if (fieldEquals("name", buf2, offset2, len2)) {
-              p.customFieldName = ji2.readString();
-            } else if (fieldEquals("field_type", buf2, offset2, len2)) {
-              p.customFieldType = ji2.readString();
-            } else {
-              ji2.skip();
+      ji.testObject(CUSTOM_FIELD_ENTRY_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> ji1.testObject(CUSTOM_FIELD_FIELDS, (customField, ji2) -> {
+            switch (customField) {
+              case 0 -> p.customFieldId = ji2.readString();
+              case 1 -> p.customFieldName = ji2.readString();
+              case 2 -> p.customFieldType = ji2.readString();
+              default -> ji2.skip();
             }
             return true;
           });
-        } else if (fieldEquals("values", buf, offset, len)) {
-          // V2 response for values is an array of objects
-          if (ji1.readArray()) {
-            ji1.testObject((buf2, offset2, len2, ji2) -> {
-              if (fieldEquals("value_text", buf2, offset2, len2)) {
-                p.value = ji2.readString();
-              } else {
-                ji2.skip();
-              }
-              return true;
-            });
-            ji1.skipRestOfArray();
+          case 1 -> {
+            // V2 response for values is an array of objects
+            if (ji1.readArray()) {
+              ji1.testObject(VALUE_TEXT_FIELDS, (valueField, ji2) -> {
+                if (valueField == 0) {
+                  p.value = ji2.readString();
+                } else {
+                  ji2.skip();
+                }
+                return true;
+              });
+              ji1.skipRestOfArray();
+            }
           }
-        } else {
-          ji1.skip();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -273,22 +300,18 @@ public record CreateIncidentResponseRecord(String callUrl,
         String id, name;
         Long value;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("duration_metric", buf, offset, len)) {
-          ji1.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("id", buf2, offset2, len2)) {
-              p.id = ji2.readString();
-            } else if (fieldEquals("name", buf2, offset2, len2)) {
-              p.name = ji2.readString();
-            } else {
-              ji2.skip();
+      ji.testObject(DURATION_METRIC_ENTRY_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> ji1.testObject(ID_NAME_FIELDS, (metricField, ji2) -> {
+            switch (metricField) {
+              case 0 -> p.id = ji2.readString();
+              case 1 -> p.name = ji2.readString();
+              default -> ji2.skip();
             }
             return true;
           });
-        } else if (fieldEquals("value_seconds", buf, offset, len)) {
-          p.value = ji1.readLong();
-        } else {
-          ji1.skip();
+          case 1 -> p.value = ji1.readLong();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -299,19 +322,14 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String id, ref, title, url, provider;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("issue_id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("issue_reference", buf, offset, len)) {
-          p.ref = ji1.readString();
-        } else if (fieldEquals("issue_name", buf, offset, len)) {
-          p.title = ji1.readString();
-        } else if (fieldEquals("issue_permalink", buf, offset, len)) {
-          p.url = ji1.readString();
-        } else if (fieldEquals("provider", buf, offset, len)) {
-          p.provider = ji1.readString();
-        } else {
-          ji1.skip();
+      ji.testObject(EXTERNAL_ISSUE_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.ref = ji1.readString();
+          case 2 -> p.title = ji1.readString();
+          case 3 -> p.url = ji1.readString();
+          case 4 -> p.provider = ji1.readString();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -323,13 +341,11 @@ public record CreateIncidentResponseRecord(String callUrl,
         ActorV2 assignee;
         IncidentRoleV2 role;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("assignee", buf, offset, len)) {
-          p.assignee = parseActorV2(ji1);
-        } else if (fieldEquals("role", buf, offset, len)) {
-          p.role = parseIncidentRoleV2(ji1);
-        } else {
-          ji1.skip();
+      ji.testObject(ROLE_ASSIGNMENT_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.assignee = parseActorV2(ji1);
+          case 1 -> p.role = parseIncidentRoleV2(ji1);
+          default -> ji1.skip();
         }
         return true;
       });
@@ -340,17 +356,13 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String id, name, description, roleType;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("name", buf, offset, len)) {
-          p.name = ji1.readString();
-        } else if (fieldEquals("description", buf, offset, len)) {
-          p.description = ji1.readString();
-        } else if (fieldEquals("role_type", buf, offset, len)) {
-          p.roleType = ji1.readString();
-        } else {
-          ji1.skip();
+      ji.testObject(ROLE_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          case 2 -> p.description = ji1.readString();
+          case 3 -> p.roleType = ji1.readString();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -361,17 +373,13 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String id, name, description, category;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("name", buf, offset, len)) {
-          p.name = ji1.readString();
-        } else if (fieldEquals("description", buf, offset, len)) {
-          p.description = ji1.readString();
-        } else if (fieldEquals("category", buf, offset, len)) {
-          p.category = ji1.readString();
-        } else {
-          ji1.skip();
+      ji.testObject(STATUS_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          case 2 -> p.description = ji1.readString();
+          case 3 -> p.category = ji1.readString();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -383,29 +391,25 @@ public record CreateIncidentResponseRecord(String callUrl,
         String id, name;
         OffsetDateTime value;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("incident_timestamp", buf, offset, len)) {
-          ji1.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("id", buf2, offset2, len2)) {
-              p.id = ji2.readString();
-            } else if (fieldEquals("name", buf2, offset2, len2)) {
-              p.name = ji2.readString();
-            } else {
-              ji2.skip();
+      ji.testObject(TIMESTAMP_ENTRY_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> ji1.testObject(ID_NAME_FIELDS, (timestampField, ji2) -> {
+            switch (timestampField) {
+              case 0 -> p.id = ji2.readString();
+              case 1 -> p.name = ji2.readString();
+              default -> ji2.skip();
             }
             return true;
           });
-        } else if (fieldEquals("value", buf, offset, len)) {
-          ji1.testObject((buf2, offset2, len2, ji2) -> {
-            if (fieldEquals("value", buf2, offset2, len2)) {
+          case 1 -> ji1.testObject(VALUE_FIELDS, (valueField, ji2) -> {
+            if (valueField == 0) {
               p.value = OffsetDateTime.parse(ji2.readString());
             } else {
               ji2.skip();
             }
             return true;
           });
-        } else {
-          ji1.skip();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -416,15 +420,12 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String id, name, description;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("name", buf, offset, len)) {
-          p.name = ji1.readString();
-        } else if (fieldEquals("description", buf, offset, len)) {
-          p.description = ji1.readString();
-        } else {
-          ji1.skip();
+      ji.testObject(ID_NAME_DESCRIPTION_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          case 2 -> p.description = ji1.readString();
+          default -> ji1.skip();
         }
         return true;
       });
@@ -435,15 +436,12 @@ public record CreateIncidentResponseRecord(String callUrl,
       final var p = new Object() {
         String id, name, description;
       };
-      ji.testObject((buf, offset, len, ji1) -> {
-        if (fieldEquals("id", buf, offset, len)) {
-          p.id = ji1.readString();
-        } else if (fieldEquals("name", buf, offset, len)) {
-          p.name = ji1.readString();
-        } else if (fieldEquals("description", buf, offset, len)) {
-          p.description = ji1.readString();
-        } else {
-          ji1.skip();
+      ji.testObject(ID_NAME_DESCRIPTION_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          case 2 -> p.description = ji1.readString();
+          default -> ji1.skip();
         }
         return true;
       });

@@ -6,7 +6,8 @@ import software.sava.incident.pagerduty.event.data.PagerDutyEventResponse;
 import software.sava.incident.pagerduty.exceptions.PagerDutyParseException;
 import software.sava.incident.pagerduty.exceptions.PagerDutyRequestException;
 import software.sava.rpc.json.http.client.JsonHttpClient;
-import systems.comodal.jsoniter.ContextFieldBufferPredicate;
+import systems.comodal.jsoniter.ContextFieldIndexPredicate;
+import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
@@ -21,21 +22,21 @@ import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static software.sava.incident.core.json.JsonUtil.escapeJson;
-import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDutyEventClient {
 
-  private static final ContextFieldBufferPredicate<PagerDutyRequestException.Builder> EXCEPTION_PARSER = (exception, buf, offset, len, ji) -> {
-    if (fieldEquals("status", buf, offset, len)) {
-      exception.status(ji.readString());
-    } else if (fieldEquals("message", buf, offset, len)) {
-      exception.message(ji.readString());
-    } else if (fieldEquals("errors", buf, offset, len)) {
-      while (ji.readArray()) {
-        exception.error(ji.readString());
+  private static final FieldMatcher EXCEPTION_FIELDS = FieldMatcher.of("status", "message", "errors");
+
+  private static final ContextFieldIndexPredicate<PagerDutyRequestException.Builder> EXCEPTION_PARSER = (exception, fieldIndex, ji) -> {
+    switch (fieldIndex) {
+      case 0 -> exception.status(ji.readString());
+      case 1 -> exception.message(ji.readString());
+      case 2 -> {
+        while (ji.readArray()) {
+          exception.error(ji.readString());
+        }
       }
-    } else {
-      ji.skip();
+      default -> ji.skip();
     }
     return true;
   };
@@ -64,7 +65,7 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     final var ji = JsonIterator.parse(body);
     final RuntimeException responseError;
     try {
-      responseError = ji.testObject(exception, EXCEPTION_PARSER).create();
+      responseError = ji.testObject(exception, EXCEPTION_FIELDS, EXCEPTION_PARSER).create();
     } catch (final RuntimeException runtimeCause) {
       throw new PagerDutyParseException(response,
           String.format("Failed to adapt %d error response: '%s'", statusCode, new String(body)),
@@ -80,9 +81,7 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
       throw errorResponse(httpResponse);
     } else {
       final var ji = JsonIterator.parse(readBody(httpResponse));
-      final var response = PagerDutyEventResponse.parser();
-      ji.testObject(response);
-      return response.create();
+      return PagerDutyEventResponse.parser().parse(ji).create();
     }
   };
 
