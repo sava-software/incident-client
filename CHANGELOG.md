@@ -1,5 +1,27 @@
 # Changelog
 
+## [25.3.0](https://github.com/sava-software/incident-client/compare/25.2.0...25.3.0) (2026-07-26)
+
+
+### Features
+
+* **build:** log plugin resolution with local repo for debug visibility ([617ec6d](https://github.com/sava-software/incident-client/commit/617ec6d41b8f05a7ade559e2c6da7887aff5bd51))
+* **fuzz:** add seed corpora and corpus README for fuzzing targets ([acab1b3](https://github.com/sava-software/incident-client/commit/acab1b33f8da54467b3b52d46b76e208247f3a2a))
+* **incident-clients:** add explicit factory registration and improve test coverage ([61c84ba](https://github.com/sava-software/incident-client/commit/61c84ba74cdf1e2927097d051b3ab5f14fa35ac5))
+* **incident-clients:** add provider-neutral IncidentClient factory and configs ([efd98a1](https://github.com/sava-software/incident-client/commit/efd98a13f989aa0854ae346629d099f6d856714d))
+* **incident-io:** add README and improve examples for incident.io client ([9e27c72](https://github.com/sava-software/incident-client/commit/9e27c72c0120a50a532e6cd1e6c067b42f92c437))
+* **json-parsing:** optimize parsers with FieldMatcher and improve parsing flow ([103d368](https://github.com/sava-software/incident-client/commit/103d36836e29cac4bfaa2a03339bbdfd03aaf3c3))
+
+
+### Bug Fixes
+
+* **json-util:** update escape behavior and ensure newline preservation ([0c778ee](https://github.com/sava-software/incident-client/commit/0c778ee5bde9e1de93e35679d83a8aa9246986cb))
+
+
+### Miscellaneous Chores
+
+* release 25.3.0 ([7a26921](https://github.com/sava-software/incident-client/commit/7a26921c071435bc257be70a56ec4e7a9270025a))
+
 ## [25.2.0](https://github.com/sava-software/incident-client/compare/25.1.2...25.2.0) (2026-07-24)
 
 
