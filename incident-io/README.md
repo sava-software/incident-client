@@ -56,6 +56,21 @@ final var client = config.createClientBuilder()
     .createClient();
 ```
 
+The config also carries the workspace-specific mapping the provider-neutral adapter
+needs — `severityIds` keyed by `IncidentSeverity` name, and default `incidentTypeId`,
+`statusId`, `visibility`, and `mode`:
+
+```properties
+bearerToken=BEARER_TOKEN
+visibility=private
+severityIds.CRITICAL=SEVERITY_ID
+incidentTypeId=INCIDENT_TYPE_ID
+```
+
+```java
+final var incidentClient = config.createIncidentClientBuilder(client).createClient();
+```
+
 ## Provider-Neutral Client
 
 `IncidentIoIncidentClient` adapts an `IncidentIoClient` to the provider-neutral
@@ -64,7 +79,7 @@ mapping from `IncidentSeverity` to a severity id — and any default type, statu
 visibility, and mode — is supplied at build time.
 
 ```java
-final var incidentClient = IncidentIoIncidentClient.build(client)
+final var incidentClient = client.incidentClientBuilder()
     .visibility(CreateIncidentRequest.Visibility.PRIVATE)
     .severityId(IncidentSeverity.CRITICAL, "SEVERITY_ID")
     .severityId(IncidentSeverity.WARNING, "SEVERITY_ID")

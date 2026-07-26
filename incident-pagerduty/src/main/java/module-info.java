@@ -10,4 +10,7 @@ module software.sava.incident_pagerduty {
   exports software.sava.incident.pagerduty.event.service;
   exports software.sava.incident.pagerduty.config;
   exports software.sava.incident.pagerduty.exceptions;
+
+  provides software.sava.incident.core.api.IncidentClientFactory with
+      software.sava.incident.pagerduty.event.client.PagerDutyIncidentClientFactory;
 }

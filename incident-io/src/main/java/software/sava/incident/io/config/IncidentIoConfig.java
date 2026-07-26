@@ -1,24 +1,50 @@
 package software.sava.incident.io.config;
 
+import software.sava.incident.core.api.IncidentSeverity;
 import software.sava.incident.core.config.HttpApiClientConfig;
+import software.sava.incident.io.CreateIncidentRequest;
 import software.sava.incident.io.IncidentIoClient;
+import software.sava.incident.io.IncidentIoIncidentClient;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
+/// Configuration for the native [IncidentIoClient] plus the workspace-specific mapping the
+/// provider-neutral [IncidentIoIncidentClient] adapter needs: `severityIds` keyed by
+/// [IncidentSeverity] name, and default `incidentTypeId`, `statusId`, `visibility`, and
+/// `mode`. The mapping fields are optional at parse time; `visibility` is required to
+/// [#createIncidentClientBuilder(IncidentIoClient)]-create a neutral client.
 public final class IncidentIoConfig extends HttpApiClientConfig {
 
   private final String bearerToken;
+  private final Map<IncidentSeverity, String> severityIds;
+  private final String incidentTypeId;
+  private final String statusId;
+  private final CreateIncidentRequest.Visibility visibility;
+  private final CreateIncidentRequest.Mode mode;
 
   private IncidentIoConfig(final URI endpoint,
                            final Duration requestTimeout,
-                           final String bearerToken) {
+                           final String bearerToken,
+                           final Map<IncidentSeverity, String> severityIds,
+                           final String incidentTypeId,
+                           final String statusId,
+                           final CreateIncidentRequest.Visibility visibility,
+                           final CreateIncidentRequest.Mode mode) {
     super(endpoint, requestTimeout);
     this.bearerToken = bearerToken;
+    this.severityIds = severityIds;
+    this.incidentTypeId = incidentTypeId;
+    this.statusId = statusId;
+    this.visibility = visibility;
+    this.mode = mode;
   }
 
   public IncidentIoClient.Builder createClientBuilder() {
@@ -34,6 +60,17 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     }
     // bearerToken is validated present at parse time
     return builder.bearerToken(bearerToken);
+  }
+
+  /// Starts a provider-neutral adapter builder over `client`, seeded with this config's
+  /// severity id mapping and default type/status/visibility/mode.
+  public IncidentIoIncidentClient.Builder createIncidentClientBuilder(final IncidentIoClient client) {
+    return IncidentIoIncidentClient.build(client)
+        .severityIds(severityIds)
+        .incidentTypeId(incidentTypeId)
+        .statusId(statusId)
+        .visibility(visibility)
+        .mode(mode);
   }
 
   public static IncidentIoConfig parseConfig(final Properties properties) {
@@ -56,31 +93,105 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     return bearerToken;
   }
 
+  public Map<IncidentSeverity, String> severityIds() {
+    return severityIds;
+  }
+
+  public String incidentTypeId() {
+    return incidentTypeId;
+  }
+
+  public String statusId() {
+    return statusId;
+  }
+
+  public CreateIncidentRequest.Visibility visibility() {
+    return visibility;
+  }
+
+  public CreateIncidentRequest.Mode mode() {
+    return mode;
+  }
+
   private static final class Parser extends HttpApiClientConfig.Parser {
 
     private String bearerToken;
+    private final Map<IncidentSeverity, String> severityIds;
+    private String incidentTypeId;
+    private String statusId;
+    private CreateIncidentRequest.Visibility visibility;
+    private CreateIncidentRequest.Mode mode;
 
     private Parser(final String prefix) {
       super(prefix);
+      this.severityIds = new EnumMap<>(IncidentSeverity.class);
     }
 
     private IncidentIoConfig createConfig() {
       if (bearerToken == null || bearerToken.isBlank()) {
         throw new IllegalStateException("IncidentIoConfig bearerToken is required.");
       }
-      return new IncidentIoConfig(endpoint, requestTimeout, bearerToken);
+      return new IncidentIoConfig(
+          endpoint,
+          requestTimeout,
+          bearerToken,
+          Map.copyOf(severityIds),
+          incidentTypeId,
+          statusId,
+          visibility,
+          mode
+      );
+    }
+
+    private static IncidentSeverity parseSeverity(final String severity) {
+      return IncidentSeverity.valueOf(severity.toUpperCase(Locale.ENGLISH));
+    }
+
+    private static CreateIncidentRequest.Visibility parseVisibility(final String visibility) {
+      return visibility == null || visibility.isBlank()
+          ? null
+          : CreateIncidentRequest.Visibility.valueOf(visibility.trim().toUpperCase(Locale.ENGLISH));
+    }
+
+    private static CreateIncidentRequest.Mode parseMode(final String mode) {
+      return mode == null || mode.isBlank()
+          ? null
+          : CreateIncidentRequest.Mode.valueOf(mode.trim().toLowerCase(Locale.ENGLISH));
     }
 
     @Override
     protected void parseConfig(final Properties properties) {
       super.parseConfig(properties);
       this.bearerToken = properties.getProperty(prefix + "bearerToken");
+      for (final var severity : IncidentSeverity.values()) {
+        final var severityId = properties.getProperty(prefix + "severityIds." + severity.name());
+        if (severityId != null && !severityId.isBlank()) {
+          severityIds.put(severity, severityId);
+        }
+      }
+      this.incidentTypeId = properties.getProperty(prefix + "incidentTypeId");
+      this.statusId = properties.getProperty(prefix + "statusId");
+      this.visibility = parseVisibility(properties.getProperty(prefix + "visibility"));
+      this.mode = parseMode(properties.getProperty(prefix + "mode"));
     }
 
     @Override
     public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
       if (fieldEquals("bearerToken", buf, offset, len)) {
         this.bearerToken = ji.readString();
+      } else if (fieldEquals("severityIds", buf, offset, len)) {
+        ji.testObject((sevBuf, sevOffset, sevLen, sevJi) -> {
+          severityIds.put(parseSeverity(new String(sevBuf, sevOffset, sevLen)), sevJi.readString());
+          return true;
+        });
+      } else if (fieldEquals("incidentTypeId", buf, offset, len)) {
+        this.incidentTypeId = ji.readString();
+      } else if (fieldEquals("statusId", buf, offset, len)) {
+        this.statusId = ji.readString();
+      } else if (fieldEquals("visibility", buf, offset, len)) {
+        this.visibility = parseVisibility(ji.readString());
+      } else if (fieldEquals("mode", buf, offset, len)) {
+        this.mode = parseMode(ji.readString());
       } else {
         return super.test(buf, offset, len, ji);
       }

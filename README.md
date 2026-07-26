@@ -101,12 +101,38 @@ try (final var httpClient = HttpClient.newHttpClient()) {
 ## Provider-Neutral Usage
 
 Service-level code can be written against `IncidentClient` and switch providers via
-configuration; each provider module supplies an adapter from its native client.
+configuration. `IncidentClients` creates a client from configuration alone — provider
+modules on the module or class path register themselves via `ServiceLoader`, and the
+`provider` config value selects one:
+
+```properties
+incident.provider=pagerduty
+incident.routingKey=INTEGRATION_KEY
+```
+
+```properties
+incident.provider=incident.io
+incident.bearerToken=BEARER_TOKEN
+incident.visibility=private
+incident.severityIds.CRITICAL=SEVERITY_ID
+```
+
+```java
+final IncidentClient incidentClient = IncidentClients.createClient(properties, "incident");
+```
+
+The JSON equivalent wraps the provider's config object, with `provider` first:
+
+```json
+{"provider": "pagerduty", "config": {"routingKey": "INTEGRATION_KEY"}}
+```
+
+Adapters can also be created in code from a native client:
 
 ```java
 final IncidentClient incidentClient = usePagerDuty
-    ? PagerDutyIncidentClient.createClient(pagerDutyEventClient)
-    : IncidentIoIncidentClient.build(incidentIoClient)
+    ? pagerDutyEventClient.asIncidentClient()
+    : incidentIoClient.incidentClientBuilder()
         .visibility(CreateIncidentRequest.Visibility.PRIVATE)
         .severityId(IncidentSeverity.CRITICAL, "SEVERITY_ID")
         .createClient();

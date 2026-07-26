@@ -9,4 +9,7 @@ module software.sava.incident_io {
   exports software.sava.incident.io;
   exports software.sava.incident.io.config;
   exports software.sava.incident.io.exceptions;
+
+  provides software.sava.incident.core.api.IncidentClientFactory with
+      software.sava.incident.io.IncidentIoIncidentClientFactory;
 }

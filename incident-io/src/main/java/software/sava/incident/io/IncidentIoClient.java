@@ -2,9 +2,7 @@ package software.sava.incident.io;
 
 import software.sava.incident.core.client.HttpApiClient;
 
-import java.net.http.HttpRequest;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.UnaryOperator;
 
 public interface IncidentIoClient extends HttpApiClient {
 
@@ -13,6 +11,12 @@ public interface IncidentIoClient extends HttpApiClient {
   }
 
   CompletableFuture<CreateIncidentResponse> createIncident(final CreateIncidentRequest request);
+
+  /// Starts a builder for the provider-neutral `IncidentClient` adapter over this client;
+  /// see [IncidentIoIncidentClient] for the workspace-specific mapping it requires.
+  default IncidentIoIncidentClient.Builder incidentClientBuilder() {
+    return IncidentIoIncidentClient.build(this);
+  }
 
   final class Builder extends HttpApiClient.Builder<Builder> {
 

@@ -1,7 +1,17 @@
 rootProject.name = "incident-client"
 
 pluginManagement {
+  // While the plugins block below requests version 0.0.0-test, resolve sava-build from
+  // its local test repo ('publishSavaBuildTestPublicationToSavaTestRepoRepository'
+  // publishes there). The useModule bypasses plugin markers, which the test repo
+  // does not contain.
+  resolutionStrategy.eachPlugin {
+    if (requested.id.id.startsWith("software.sava.build") && requested.version == "0.0.0-test") {
+      useModule("software.sava:sava-build:0.0.0-test")
+    }
+  }
   repositories {
+    maven(url = "/Users/jim/src/sava-build/build/sava-test-repo")
     gradlePluginPortal()
     mavenCentral()
     val gprUser = providers.gradleProperty("savaGithubPackagesUsername")
@@ -27,6 +37,8 @@ pluginManagement {
 }
 
 plugins {
+//  id("software.sava.build") version "0.0.0-test"
+//  id("software.sava.build.feature.jdk-provisioning") version "0.0.0-test"
   id("software.sava.build") version "21.5.15"
   id("software.sava.build.feature.jdk-provisioning") version "21.5.15"
 }

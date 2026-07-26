@@ -5,8 +5,9 @@ import software.sava.incident.core.client.HttpApiClient;
 import java.util.concurrent.CompletableFuture;
 
 /// Provider-neutral incident reporting. Service-level code written against this interface
-/// can switch between providers (PagerDuty, incident.io, ...) via configuration; each
-/// provider module supplies an adapter from its native client.
+/// can switch between providers (PagerDuty, incident.io, ...) via configuration — see
+/// [IncidentClients] for the config-driven factory; each provider module supplies an
+/// adapter from its native client.
 public interface IncidentClient extends HttpApiClient {
 
   CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert);

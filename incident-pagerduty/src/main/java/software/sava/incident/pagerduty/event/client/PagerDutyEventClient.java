@@ -1,5 +1,6 @@
 package software.sava.incident.pagerduty.event.client;
 
+import software.sava.incident.core.api.IncidentClient;
 import software.sava.incident.core.client.HttpApiClient;
 import software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayload;
 import software.sava.incident.pagerduty.event.data.PagerDutyEventPayload;
@@ -11,6 +12,12 @@ public interface PagerDutyEventClient extends HttpApiClient {
 
   static Builder clientBuilder() {
     return new Builder();
+  }
+
+  /// Adapts this client to the provider-neutral [IncidentClient]; see
+  /// [PagerDutyIncidentClient] for how alerts map to trigger events.
+  default IncidentClient asIncidentClient() {
+    return PagerDutyIncidentClient.createClient(this);
   }
 
   String defaultClientName();
