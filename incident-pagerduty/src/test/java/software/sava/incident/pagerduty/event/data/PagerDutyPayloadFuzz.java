@@ -17,7 +17,8 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// always be valid JSON: no raw control character may survive escaping, and parsing the
 /// event back must yield the builder's values modulo the documented transformations —
 /// summaries truncate at 1024 characters, and line feeds/carriage returns are removed
-/// from string fields.
+/// from display fields (summary, source, component, group, class, links, images) while
+/// custom-detail keys and values round-trip verbatim.
 ///
 /// The input is split on NUL bytes into field values; the leading byte selects the
 /// severity.
@@ -54,7 +55,8 @@ public final class PagerDutyPayloadFuzz {
     final var expectedDetails = new LinkedHashMap<String, Object>();
     if (parts.length > 6) {
       builder.customDetails(parts[5], parts[6]);
-      expectedDetails.put(strip(parts[5]), strip(parts[6]));
+      // custom details are data, not display fields: they round-trip verbatim
+      expectedDetails.put(parts[5], parts[6]);
     }
     builder.customDetails("fuzz-num", 42);
     expectedDetails.put("fuzz-num", 42);
@@ -192,7 +194,7 @@ public final class PagerDutyPayloadFuzz {
     return i < parts.length ? parts[i] : null;
   }
 
-  /// The expected serialization transform for string fields: line feeds and carriage
+  /// The expected serialization transform for display fields: line feeds and carriage
   /// returns are removed; every other escape round-trips back to the original character.
   private static String strip(final String str) {
     return str.replace("\n", "").replace("\r", "");

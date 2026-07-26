@@ -32,7 +32,7 @@ final class PagerDutyPayloadTests {
     assertEquals(
         "{\"summary\":\"sum\\\"maryline\",\"source\":\"so\\\\urce\",\"severity\":\"critical\""
             + ",\"timestamp\":\"2018-08-01T02:03:04Z\",\"component\":\"com\\\"p\",\"group\":\"gr\\tp\""
-            + ",\"class\":\"cl\\\"ass\",\"custom_details\":{\"key\\\"1\":\"val1\",\"num\":5,\"flag\":true}}",
+            + ",\"class\":\"cl\\\"ass\",\"custom_details\":{\"key\\\"1\":\"val\\n1\",\"num\":5,\"flag\":true}}",
         payload.payloadJson()
     );
   }

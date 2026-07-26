@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static java.time.ZoneOffset.UTC;
+import static software.sava.incident.core.json.JsonUtil.escapeJson;
 import static software.sava.incident.core.json.JsonUtil.escapeJsonRemoveNewLines;
 
 record PagerDutyChangeEventPayloadRecord(String summary,
@@ -244,10 +245,11 @@ record PagerDutyChangeEventPayloadRecord(String summary,
           case Boolean bool -> bool;
           case Object obj -> {
             final var str = obj.toString();
-            yield escapeJsonRemoveNewLines(str);
+            // custom details are data, not display fields: newlines survive as \n escapes
+            yield escapeJson(str);
           }
         };
-        final var key = escapeJsonRemoveNewLines(entry.getKey());
+        final var key = escapeJson(entry.getKey());
         return switch (stringOrRawVal) {
           case null -> String.format("""
               "%s":null""", key
