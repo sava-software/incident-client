@@ -34,17 +34,37 @@ public final class IncidentClients {
   }
 
   public static IncidentClient createClient(final Properties properties, final String prefix) {
+    return createClient(properties, prefix, ServiceLoader.load(IncidentClientFactory.class));
+  }
+
+  public static IncidentClient createClient(final JsonIterator ji) {
+    return createClient(ji, ServiceLoader.load(IncidentClientFactory.class));
+  }
+
+  /// Resolves the [IncidentClientFactory] whose [IncidentClientFactory#provider()] matches
+  /// `provider` ignoring case and any characters other than letters and digits.
+  public static IncidentClientFactory loadFactory(final String provider) {
+    return loadFactory(provider, ServiceLoader.load(IncidentClientFactory.class));
+  }
+
+  // package-private seams: resolution and dispatch against an explicit factory registry,
+  // so the logic is pinned without a provider module on the test path
+
+  static IncidentClient createClient(final Properties properties,
+                                     final String prefix,
+                                     final Iterable<IncidentClientFactory> factories) {
     final String normalized;
     if (prefix == null || prefix.isBlank()) {
       normalized = "";
     } else {
       normalized = prefix.endsWith(".") ? prefix : prefix + '.';
     }
-    return loadFactory(properties.getProperty(normalized + "provider")).createClient(properties, prefix);
+    return loadFactory(properties.getProperty(normalized + "provider"), factories)
+        .createClient(properties, prefix);
   }
 
-  public static IncidentClient createClient(final JsonIterator ji) {
-    final var parser = new Parser();
+  static IncidentClient createClient(final JsonIterator ji, final Iterable<IncidentClientFactory> factories) {
+    final var parser = new Parser(factories);
     ji.testObject(parser);
     if (parser.client == null) {
       throw new IllegalStateException("IncidentClients config 'config' object is required.");
@@ -52,15 +72,13 @@ public final class IncidentClients {
     return parser.client;
   }
 
-  /// Resolves the [IncidentClientFactory] whose [IncidentClientFactory#provider()] matches
-  /// `provider` ignoring case and any characters other than letters and digits.
-  public static IncidentClientFactory loadFactory(final String provider) {
+  static IncidentClientFactory loadFactory(final String provider, final Iterable<IncidentClientFactory> factories) {
     if (provider == null || provider.isBlank()) {
       throw new IllegalStateException("IncidentClients config 'provider' is required.");
     }
     final var key = normalize(provider);
     final var available = new ArrayList<String>();
-    for (final var factory : ServiceLoader.load(IncidentClientFactory.class)) {
+    for (final var factory : factories) {
       final var id = factory.provider();
       if (normalize(id).equals(key)) {
         return factory;
@@ -87,8 +105,13 @@ public final class IncidentClients {
 
   private static final class Parser implements FieldBufferPredicate {
 
+    private final Iterable<IncidentClientFactory> factories;
     private String provider;
     private IncidentClient client;
+
+    private Parser(final Iterable<IncidentClientFactory> factories) {
+      this.factories = factories;
+    }
 
     @Override
     public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
@@ -98,7 +121,7 @@ public final class IncidentClients {
         if (provider == null) {
           throw new IllegalStateException("IncidentClients config 'provider' must precede 'config'.");
         }
-        this.client = loadFactory(provider).createClient(ji);
+        this.client = loadFactory(provider, factories).createClient(ji);
       } else {
         throw new IllegalStateException("Unknown IncidentClients config field " + new String(buf, offset, len));
       }

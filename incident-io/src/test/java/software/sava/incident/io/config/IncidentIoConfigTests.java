@@ -205,6 +205,34 @@ final class IncidentIoConfigTests {
   }
 
   @Test
+  void blankMappingPropertiesParseAsAbsent() {
+    final var properties = new Properties();
+    properties.setProperty("bearerToken", "t");
+    properties.setProperty("severityIds.CRITICAL", "  ");
+    properties.setProperty("visibility", "  ");
+    properties.setProperty("mode", "");
+    final var config = IncidentIoConfig.parseConfig(properties);
+    assertTrue(config.severityIds().isEmpty());
+    assertNull(config.visibility());
+    assertNull(config.mode());
+  }
+
+  @Test
+  void unknownEnumValuesFailLoudly() {
+    final var properties = new Properties();
+    properties.setProperty("bearerToken", "t");
+    properties.setProperty("visibility", "internal");
+    final var ex = assertThrows(IllegalStateException.class,
+        () -> IncidentIoConfig.parseConfig(properties));
+    assertTrue(ex.getMessage().contains("internal"));
+
+    final var jsonEx = assertThrows(IllegalStateException.class,
+        () -> IncidentIoConfig.parseConfig(JsonIterator.parse("""
+            {"bearerToken":"t","severityIds":{"FATAL":"sev-9"}}""")));
+    assertTrue(jsonEx.getMessage().contains("FATAL"));
+  }
+
+  @Test
   void incidentClientMappingDefaultsAbsent() {
     final var config = IncidentIoConfig.parseConfig(JsonIterator.parse("""
         {"bearerToken":"t"}"""));

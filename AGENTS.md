@@ -293,6 +293,30 @@ digest the failure message prints.
 - The Java toolchain version comes from `gradle/sava.properties` (`javaVersion`); JDK
   provisioning is automatic.
 
+#### Building against an unpublished sava-build change
+
+To drive a sava-build feature or bug fix from this repo, publish sava-build to its local
+test repo and point this build at it with `savaBuildLocalRepo` (the clone path belongs in
+`AGENTS.local.md` or `~/.gradle/gradle.properties`, never in `settings.gradle.kts`):
+
+```
+(cd <sava-build>; ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository)
+./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo
+```
+
+The property adds that repo to `pluginManagement` and rewrites every `software.sava.build*`
+plugin id to `software.sava:sava-build:0.0.0-test`, so the versions in the
+`settings.gradle.kts` `plugins {}` block are ignored while it is set — nothing in that file
+needs editing, and an unset property is the normal published path. Put it in
+`~/.gradle/gradle.properties` to keep it on across invocations.
+
+**The publish is not automatic.** sava-build's test repo is a plain Maven directory, not an
+included build: every sava-build edit needs the publish task re-run, or this build silently
+keeps resolving the previously published jar with no warning. (Gradle does re-read
+`file:` repositories on each resolution, so a *republished* `0.0.0-test` is picked up
+immediately — the stale case is only a forgotten publish.) When done, drop the property and
+bump the versions in `settings.gradle.kts` to the released sava-build.
+
 ## AGENTS.local.md template
 
 ```markdown

@@ -1,17 +1,28 @@
 rootProject.name = "incident-client"
 
 pluginManagement {
-  // While the plugins block below requests version 0.0.0-test, resolve sava-build from
-  // its local test repo ('publishSavaBuildTestPublicationToSavaTestRepoRepository'
-  // publishes there). The useModule bypasses plugin markers, which the test repo
+  // Point '-PsavaBuildLocalRepo=<path to sava-build>/build/sava-test-repo' (or set it in
+  // ~/.gradle/gradle.properties) at a local sava-build checkout to build against an
+  // unpublished plugin change. sava-build publishes that repo with
+  //   ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository
+  // and every id below then resolves to the 0.0.0-test module regardless of the version
+  // the plugins block requests. That publish is NOT automatic: re-run it after every
+  // sava-build edit, or this build silently keeps using the previously published jar.
+  // The useModule call is also what bypasses plugin markers, which the test repo
   // does not contain.
-  resolutionStrategy.eachPlugin {
-    if (requested.id.id.startsWith("software.sava.build") && requested.version == "0.0.0-test") {
-      useModule("software.sava:sava-build:0.0.0-test")
+  val savaBuildLocalRepo = providers.gradleProperty("savaBuildLocalRepo")
+    .orNull?.takeIf { it.isNotBlank() }
+  if (savaBuildLocalRepo != null) {
+    resolutionStrategy.eachPlugin {
+      if (requested.id.id.startsWith("software.sava.build")) {
+        useModule("software.sava:sava-build:0.0.0-test")
+      }
     }
   }
   repositories {
-    maven(url = "/Users/jim/src/sava-build/build/sava-test-repo")
+    if (savaBuildLocalRepo != null) {
+      maven(url = savaBuildLocalRepo)
+    }
     gradlePluginPortal()
     mavenCentral()
     val gprUser = providers.gradleProperty("savaGithubPackagesUsername")
@@ -29,16 +40,9 @@ pluginManagement {
       }
     }
   }
-  // Resolve sava-build from GitHub Packages. Uncomment only while depending on an
-  // unpublished sava-build change, then publish, bump the versions below, re-comment.
-//  if (settingsDir.resolve("../sava-build").isDirectory) {
-//    includeBuild("../sava-build")
-//  }
 }
 
 plugins {
-//  id("software.sava.build") version "0.0.0-test"
-//  id("software.sava.build.feature.jdk-provisioning") version "0.0.0-test"
   id("software.sava.build") version "21.5.15"
   id("software.sava.build.feature.jdk-provisioning") version "21.5.15"
 }

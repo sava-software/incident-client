@@ -55,6 +55,21 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   Content-equal; distinguishable only by mutating the builder's internal
   map through the accessor, which the API does not invite. Equal but not
   identical.
+- `# service-loader-binding` (api: `IncidentClients.createClient:33,37,41`,
+  `loadFactory:47`) — return-value mutants on the public one-line wrappers
+  that bind `ServiceLoader.load(IncidentClientFactory.class)` and delegate to
+  the package-private registry seams. No provider module is on incident-core's
+  test path, so the wrappers can only throw (provider never found) and their
+  return statements are unreachable here by construction. The resolution and
+  dispatch logic behind them is fully pinned through the seams
+  (`IncidentClientsTests` stub factories), and the wrappers themselves are
+  exercised end-to-end by the provider modules' factory tests
+  (`PagerDutyIncidentClientFactoryTests`, `IncidentIoIncidentClientFactoryTests`),
+  which run the public entry points against real `ServiceLoader` registration —
+  those kills just land outside this suite's `targetTests`. Escape hatch: none
+  worth taking — registering a test-only provider from the patched core test
+  module would need a synthesized `provides` directive the whitebox test setup
+  does not offer.
 - `# async-routing` (api: `IncidentServiceVal.retry:71` ×3) — `retryDelay >
   0` routes between `exceptionallyComposeAsync(delayedExecutor(...))` and
   `exceptionallyCompose`: at delay 0 both produce identical results and
