@@ -13,6 +13,11 @@ pluginManagement {
   val savaBuildLocalRepo = providers.gradleProperty("savaBuildLocalRepo")
     .orNull?.takeIf { it.isNotBlank() }
   if (savaBuildLocalRepo != null) {
+    // Loud on purpose: with the property set in ~/.gradle/gradle.properties, nothing in
+    // this file would otherwise reveal that the versions in the plugins block are ignored.
+    logger.warn(
+      "sava-build: resolving 'software.sava.build*' plugins from LOCAL repo $savaBuildLocalRepo"
+    )
     resolutionStrategy.eachPlugin {
       if (requested.id.id.startsWith("software.sava.build")) {
         useModule("software.sava:sava-build:0.0.0-test")
