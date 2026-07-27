@@ -1,10 +1,11 @@
 package software.sava.incident.io;
 
+import software.sava.incident.core.json.Rfc3339;
 import software.sava.incident.core.request.BaseRequest;
 
 import java.time.Duration;
 import java.util.Collection;
-import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static software.sava.incident.core.json.JsonUtil.escapeJson;
@@ -21,7 +22,10 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   private final String statusId;
   private final String visibility;
   private final String slackTeamId;
-  private final Map<String, String> customFieldValues;
+  private final String slackChannelNameOverride;
+  private final Collection<CustomFieldEntry> customFieldEntries;
+  private final Collection<IncidentTimestampValue> incidentTimestampValues;
+  private final RetrospectiveIncidentOptions retrospectiveIncidentOptions;
 
   CreateIncidentRequestRecord(final Duration timeout,
                               final String idempotencyKey,
@@ -34,7 +38,10 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
                               final String statusId,
                               final String visibility,
                               final String slackTeamId,
-                              final Map<String, String> customFieldValues) {
+                              final String slackChannelNameOverride,
+                              final Collection<CustomFieldEntry> customFieldEntries,
+                              final Collection<IncidentTimestampValue> incidentTimestampValues,
+                              final RetrospectiveIncidentOptions retrospectiveIncidentOptions) {
     super(timeout);
     this.idempotencyKey = idempotencyKey;
     this.name = name;
@@ -46,7 +53,10 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
     this.statusId = statusId;
     this.visibility = visibility;
     this.slackTeamId = slackTeamId;
-    this.customFieldValues = customFieldValues;
+    this.slackChannelNameOverride = slackChannelNameOverride;
+    this.customFieldEntries = customFieldEntries;
+    this.incidentTimestampValues = incidentTimestampValues;
+    this.retrospectiveIncidentOptions = retrospectiveIncidentOptions;
   }
 
   @Override
@@ -100,8 +110,23 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
   }
 
   @Override
-  public Map<String, String> customFieldValues() {
-    return customFieldValues;
+  public String slackChannelNameOverride() {
+    return slackChannelNameOverride;
+  }
+
+  @Override
+  public Collection<CustomFieldEntry> customFieldEntries() {
+    return customFieldEntries;
+  }
+
+  @Override
+  public Collection<IncidentTimestampValue> incidentTimestampValues() {
+    return incidentTimestampValues;
+  }
+
+  @Override
+  public RetrospectiveIncidentOptions retrospectiveIncidentOptions() {
+    return retrospectiveIncidentOptions;
   }
 
   @Override
@@ -113,34 +138,47 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
     appendField(sb, "summary", summary);
     appendField(sb, "incident_type_id", incidentTypeId);
     // the builder normalizes null collections to empty
-    if (!incidentRoleAssignments.isEmpty()) {
-      if (sb.length() > 1) sb.append(',');
-      sb.append("""
-          "incident_role_assignments":[""");
-      sb.append(incidentRoleAssignments.stream()
-          .map(CreateIncidentRequestRecord::roleAssignmentJson)
-          .collect(Collectors.joining(",")));
-      sb.append(']');
-    }
+    appendArray(sb, "incident_role_assignments", incidentRoleAssignments,
+        CreateIncidentRequestRecord::roleAssignmentJson);
     appendField(sb, "mode", mode);
     appendField(sb, "severity_id", severityId);
     appendField(sb, "incident_status_id", statusId);
     appendField(sb, "visibility", visibility);
     appendField(sb, "slack_team_id", slackTeamId);
-    if (!customFieldValues.isEmpty()) {
-      if (sb.length() > 1) sb.append(',');
-      sb.append("""
-          "custom_field_entries":[""");
-      sb.append(customFieldValues.entrySet().stream()
-          .map(e -> String.format("""
-                  {"custom_field_id":"%s","values":[{"value_text":"%s"}]}""",
-              escapeJson(e.getKey()), escapeJson(e.getValue())
-          ))
-          .collect(Collectors.joining(",")));
-      sb.append(']');
+    appendField(sb, "slack_channel_name_override", slackChannelNameOverride);
+    appendArray(sb, "custom_field_entries", customFieldEntries,
+        CreateIncidentRequestRecord::customFieldEntryJson);
+    appendArray(sb, "incident_timestamp_values", incidentTimestampValues,
+        CreateIncidentRequestRecord::incidentTimestampValueJson);
+    if (retrospectiveIncidentOptions != null) {
+      // options with nothing set are omitted entirely
+      final var options = retrospectiveOptionsJson(retrospectiveIncidentOptions);
+      if (!options.isEmpty()) {
+        if (sb.length() > 1) {
+          sb.append(',');
+        }
+        sb.append("""
+            "retrospective_incident_options":{""").append(options).append('}');
+      }
     }
     sb.append('}');
     return sb.toString();
+  }
+
+  private static <T> void appendArray(final StringBuilder sb,
+                                      final String field,
+                                      final Collection<T> values,
+                                      final Function<T, String> toJson) {
+    if (values.isEmpty()) {
+      return;
+    }
+    if (sb.length() > 1) {
+      sb.append(',');
+    }
+    sb.append('"').append(field).append("""
+        ":[""");
+    sb.append(values.stream().map(toJson).collect(Collectors.joining(",")));
+    sb.append(']');
   }
 
   private static String roleAssignmentJson(final IncidentRoleAssignment ira) {
@@ -162,9 +200,65 @@ final class CreateIncidentRequestRecord extends BaseRequest implements CreateInc
     return sb.append('}').toString();
   }
 
+  /// `custom_field_id` and `values` are both required, so — like `incident_role_id` —
+  /// they are emitted unconditionally; a blank id is the API's to reject, not this
+  /// client's to drop. An empty `values` array unsets the field.
+  private static String customFieldEntryJson(final CustomFieldEntry entry) {
+    final var sb = new StringBuilder(160);
+    sb.append("""
+        {"custom_field_id":"%s","values":[""".formatted(escapeJson(entry.customFieldId())));
+    sb.append(entry.values().stream()
+        .map(CreateIncidentRequestRecord::customFieldValueJson)
+        .filter(value -> !value.isEmpty())
+        .collect(Collectors.joining(",")));
+    return sb.append("]}").toString();
+  }
+
+  /// A value with every field blank carries nothing; it is dropped rather than
+  /// serialized as `{}`.
+  private static String customFieldValueJson(final CustomFieldValue value) {
+    final var sb = new StringBuilder(96);
+    appendField(sb, "id", value.id());
+    appendField(sb, "value_catalog_entry_id", value.valueCatalogEntryId());
+    appendField(sb, "value_link", value.valueLink());
+    appendField(sb, "value_numeric", value.valueNumeric());
+    appendField(sb, "value_option_id", value.valueOptionId());
+    appendField(sb, "value_text", value.valueText());
+    return sb.isEmpty() ? "" : sb.insert(0, '{').append('}').toString();
+  }
+
+  /// `incident_timestamp_id` is required and emitted unconditionally; only `value` is
+  /// optional.
+  private static String incidentTimestampValueJson(final IncidentTimestampValue timestampValue) {
+    final var sb = new StringBuilder(96);
+    sb.append("""
+        {"incident_timestamp_id":"%s\"""".formatted(escapeJson(timestampValue.incidentTimestampId())));
+    final var value = timestampValue.value();
+    if (value != null) {
+      // RFC 3339 output is digits and punctuation; nothing here needs escaping
+      sb.append("""
+          ,"value":"%s\"""".formatted(Rfc3339.format(value)));
+    }
+    return sb.append('}').toString();
+  }
+
+  private static String retrospectiveOptionsJson(final RetrospectiveIncidentOptions options) {
+    final var sb = new StringBuilder(128);
+    final var externalId = options.externalId();
+    if (externalId != null) {
+      sb.append("""
+          "external_id":""").append(externalId.longValue());
+    }
+    appendField(sb, "postmortem_document_url", options.postmortemDocumentUrl());
+    appendField(sb, "slack_channel_id", options.slackChannelId());
+    return sb.toString();
+  }
+
   private static void appendField(final StringBuilder sb, final String field, final String value) {
     if (value != null && !value.isBlank()) {
-      if (sb.length() > 1) sb.append(',');
+      if (sb.length() > 1) {
+        sb.append(',');
+      }
       sb.append('"').append(field).append("""
           ":"%s\"""".formatted(escapeJson(value)));
     }

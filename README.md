@@ -99,6 +99,12 @@ try (final var httpClient = HttpClient.newHttpClient()) {
 }
 ```
 
+`customFieldValues` is sugar for text custom fields; select, catalog, link, and numeric
+fields use `customFieldEntries` with a matching `CustomFieldValue` — see the
+[module README](incident-io/README.md). `slackChannelNameOverride`,
+`incidentTimestampValues`, and `retrospectiveIncidentOptions` round out
+`IncidentsCreatePayloadV2`.
+
 ### Generic Webhook / Slack / Telegram
 
 [Full example](incident-examples/src/main/java/software/sava/incident/examples/WebhookExamples.java)

@@ -43,6 +43,48 @@ try (final var httpClient = HttpClient.newHttpClient()) {
 Role assignees may be referenced by incident.io user id, email, or Slack user id:
 `UserReference.byId(..)`, `UserReference.byEmail(..)`, `UserReference.bySlackUserId(..)`.
 
+The rest of `IncidentsCreatePayloadV2` is available on the same builder:
+`slackTeamId`, `slackChannelNameOverride`, `incidentTimestampValues`, and
+`retrospectiveIncidentOptions` (which only applies with `Mode.retrospective`).
+
+### Custom fields
+
+`customFieldValues(Map<String, String>)` is sugar for the text-only case. Every other
+custom-field type needs the value shape that matches it, via `customFieldEntries`:
+
+```java
+.customFieldEntries(List.of(
+    new CreateIncidentRequest.CustomFieldEntry("TEXT_FIELD_ID", "some text"),
+    // single_select / multi_select take one value per selected option
+    new CreateIncidentRequest.CustomFieldEntry("SELECT_FIELD_ID", List.of(
+        CreateIncidentRequest.CustomFieldValue.optionId("OPTION_ID_1"),
+        CreateIncidentRequest.CustomFieldValue.optionId("OPTION_ID_2"))),
+    new CreateIncidentRequest.CustomFieldEntry("CATALOG_FIELD_ID",
+        List.of(CreateIncidentRequest.CustomFieldValue.catalogEntryId("CATALOG_ENTRY_ID"))),
+    new CreateIncidentRequest.CustomFieldEntry("LINK_FIELD_ID",
+        List.of(CreateIncidentRequest.CustomFieldValue.link("https://example.com/"))),
+    // numeric goes over the wire as a string
+    new CreateIncidentRequest.CustomFieldEntry("NUMERIC_FIELD_ID",
+        List.of(CreateIncidentRequest.CustomFieldValue.numeric("123.456")))))
+```
+
+An entry with an empty `values` list unsets the field. The payload's deprecated
+`value_timestamp` is not supported — use `incidentTimestampValues` instead.
+
+### Response
+
+`CreateIncidentResponse` follows `IncidentV2`. Two shapes are worth knowing before you
+read from it:
+
+- `creator()` is an `ActorV2` **union** — `alert()`, `apiKey()`, `user()`, `workflow()`,
+  with the unset variants null. An incident created through this client is created by an
+  API key, so `creator().apiKey()` is what you get back, not `creator().user()`. Role
+  assignees are a plain `UserV2`, not this union.
+- `customFieldEntries()` carries every value the field holds (a `multi_select` has one
+  per selected option), and which component of `CustomFieldValueV2` is populated follows
+  the entry's `customFieldType`: `valueText`, `valueOption`, `valueCatalogEntry`,
+  `valueLink`, or `valueNumeric`.
+
 ## Configuration
 
 `IncidentIoConfig` parses a client configuration from `Properties` (optionally with a key

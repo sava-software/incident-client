@@ -279,6 +279,9 @@ final class IncidentIoClientTest {
             "mode": "standard",
             "name": "Our database is sad",
             "permalink": "https://app.incident.io/incidents/123",
+            "postmortem_document_ids": [
+              "01FCNDV6P870EA6S7TK1DSYD5H"
+            ],
             "postmortem_document_url": "https://docs.google.com/my_doc_id",
             "reference": "INC-123",
             "severity": {
@@ -308,15 +311,33 @@ final class IncidentIoClientTest {
     assertNotNull(response);
     assertEquals("https://zoom.us/foo", response.callUrl());
     assertEquals("2021-08-17T13:28:57.801578Z", response.createdAt().toString());
-    assertNotNull(response.creator());
-    assertEquals("lisa@incident.io", response.creator().email());
+    // the spec example populates every actor variant at once; each is parsed on its own
+    final var creator = response.creator();
+    assertNotNull(creator);
+    assertEquals("01GW2G3V0S59R238FAHPDS1R66", creator.alert().id());
+    assertEquals("*errors.withMessage: PG::Error failed to connect", creator.alert().title());
+    assertEquals("01FCNDV6P870EA6S7TK1DSYDG0", creator.apiKey().id());
+    assertEquals("My test API key", creator.apiKey().name());
+    assertEquals("lisa@incident.io", creator.user().email());
+    assertEquals("viewer", creator.user().role());
+    assertEquals("01FCNDV6P870EA6S7TK1DSYDG0", creator.workflow().id());
+    assertEquals("My little workflow", creator.workflow().name());
 
     assertEquals(1, response.customFieldEntries().size());
     final var customField = response.customFieldEntries().iterator().next();
     assertEquals("01FCNDV6P870EA6S7TK1DSYDG0", customField.customFieldId());
     assertEquals("Affected Team", customField.customFieldName());
     assertEquals("single_select", customField.customFieldType());
-    assertEquals("This is my text field, I hope you like it", customField.value());
+    final var customFieldValue = customField.values().iterator().next();
+    assertEquals("This is my text field, I hope you like it", customFieldValue.valueText());
+    assertEquals("https://google.com/", customFieldValue.valueLink());
+    assertEquals("123.456", customFieldValue.valueNumeric());
+    assertEquals("Product", customFieldValue.valueOption().value());
+    assertEquals(10L, customFieldValue.valueOption().sortKey());
+    assertEquals("Primary On-call", customFieldValue.valueCatalogEntry().name());
+    assertEquals("761722cd-d1d7-477b-ac7e-90f9e079dc33", customFieldValue.valueCatalogEntry().externalId());
+    assertEquals(List.of("lawrence@incident.io", "lawrence"),
+        List.copyOf(customFieldValue.valueCatalogEntry().aliases()));
 
     assertEquals(1, response.durationMetrics().size());
     final var durationMetric = response.durationMetrics().iterator().next();
@@ -325,10 +346,13 @@ final class IncidentIoClientTest {
     assertEquals(10800L, durationMetric.valueSeconds());
 
     assertNotNull(response.externalIssueReference());
-    assertEquals("INC-123", response.externalIssueReference().issueTitle());
+    assertEquals("INC-123", response.externalIssueReference().issueName());
+    assertEquals("https://linear.app/incident-io/issue/INC-1609/find-copywriter-to-write-up",
+        response.externalIssueReference().issuePermalink());
     assertEquals("asana", response.externalIssueReference().provider());
 
     assertEquals("01FDAG4SAP5TYPT98WGR2N7W91", response.id());
+    assertEquals(List.of("01FCNDV6P870EA6S7TK1DSYD5H"), List.copyOf(response.postmortemDocumentIds()));
 
     assertEquals(1, response.incidentRoleAssignments().size());
     final var roleAssignment = response.incidentRoleAssignments().iterator().next();

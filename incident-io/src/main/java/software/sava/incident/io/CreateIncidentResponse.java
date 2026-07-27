@@ -35,6 +35,8 @@ public interface CreateIncidentResponse {
 
   String permalink();
 
+  Collection<String> postmortemDocumentIds();
+
   String postmortemDocumentUrl();
 
   String reference();
@@ -78,22 +80,59 @@ public interface CreateIncidentResponse {
     }
   }
 
-  record ActorV2(String email, String id, String name, String slackUserId) {
+  /// An `ActorV2`: a union naming whatever created the incident. At most one member is
+  /// set — an incident created through this client carries an [#apiKey()], not a
+  /// [#user()] — and members the response omits are null.
+  record ActorV2(AlertActorV2 alert, ApiKeyActorV2 apiKey, UserV2 user, WorkflowActorV2 workflow) {
   }
 
-  record CustomFieldEntryV2(String customFieldId, String customFieldName, String customFieldType,
-                            Object value) {
+  record AlertActorV2(String id, String title) {
+  }
+
+  record ApiKeyActorV2(String id, String name) {
+  }
+
+  record WorkflowActorV2(String id, String name) {
+  }
+
+  /// A `UserV2`. `role` is deprecated upstream and no longer updated.
+  record UserV2(String email, String id, String name, String role, String slackUserId) {
+  }
+
+  /// A `CustomFieldEntryV2`, flattened: the nested `custom_field` type info is inlined as
+  /// the `customField*` components, and `values` holds every value the field carries — a
+  /// `multi_select` has one per selected option.
+  record CustomFieldEntryV2(String customFieldId,
+                            String customFieldName,
+                            String customFieldType,
+                            Collection<CustomFieldValueV2> values) {
+  }
+
+  /// A `CustomFieldValueV2`. Which component carries the value follows the entry's
+  /// `customFieldType`: `valueText` for `text`, `valueOption` for `single_select` and
+  /// `multi_select`, `valueCatalogEntry` for catalog-backed fields, `valueLink` for
+  /// `link`, and `valueNumeric` for `numeric`.
+  record CustomFieldValueV2(EmbeddedCatalogEntryV2 valueCatalogEntry,
+                            String valueLink,
+                            String valueNumeric,
+                            CustomFieldOptionV2 valueOption,
+                            String valueText) {
+  }
+
+  record CustomFieldOptionV2(String customFieldId, String id, long sortKey, String value) {
+  }
+
+  record EmbeddedCatalogEntryV2(Collection<String> aliases, String externalId, String id, String name) {
   }
 
   record IncidentDurationMetricWithValueV2(String durationMetricId, String durationMetricName,
                                            Long valueSeconds) {
   }
 
-  record ExternalIssueReferenceV2(String issueId, String issueReference, String issueTitle,
-                                  String issueUrl, String provider) {
+  record ExternalIssueReferenceV2(String issueName, String issuePermalink, String provider) {
   }
 
-  record IncidentRoleAssignmentV2(ActorV2 assignee, IncidentRoleV2 role) {
+  record IncidentRoleAssignmentV2(UserV2 assignee, IncidentRoleV2 role) {
   }
 
   record IncidentRoleV2(String id, String name, String description, String roleType) {

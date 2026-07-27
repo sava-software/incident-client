@@ -3,6 +3,8 @@ package software.sava.incident.io;
 import software.sava.incident.core.request.PostRequest;
 import software.sava.incident.core.request.Request;
 
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -39,9 +41,18 @@ public interface CreateIncidentRequest extends PostRequest {
 
   String slackTeamId();
 
-  /// Text custom-field values keyed by `custom_field_id`; serialized as
-  /// `custom_field_entries` with one `value_text` value per entry.
-  Map<String, String> customFieldValues();
+  /// Name of the Slack channel to create for this incident; serialized as
+  /// `slack_channel_name_override`.
+  String slackChannelNameOverride();
+
+  /// Custom-field values, one entry per `custom_field_id`; serialized as
+  /// `custom_field_entries`.
+  Collection<CustomFieldEntry> customFieldEntries();
+
+  Collection<IncidentTimestampValue> incidentTimestampValues();
+
+  /// Only meaningful when `mode` is `retrospective`.
+  RetrospectiveIncidentOptions retrospectiveIncidentOptions();
 
   enum Mode {
     standard,
@@ -85,6 +96,68 @@ public interface CreateIncidentRequest extends PostRequest {
     }
   }
 
+  /// A `CustomFieldValuePayloadV2`. Which field carries the value depends on the custom
+  /// field's type: `valueText` for `text`, `valueOptionId` for `single_select` and
+  /// `multi_select`, `valueCatalogEntryId` for catalog-backed fields, `valueLink` for
+  /// `link`, and `valueNumeric` for `numeric` (the API takes the number as a string).
+  /// Blank fields are omitted, and a value with nothing set at all is dropped from its
+  /// entry rather than serialized as `{}`.
+  ///
+  /// The payload's deprecated `value_timestamp` is not supported; use
+  /// [IncidentTimestampValue] instead.
+  record CustomFieldValue(String id,
+                          String valueCatalogEntryId,
+                          String valueLink,
+                          String valueNumeric,
+                          String valueOptionId,
+                          String valueText) {
+
+    public static CustomFieldValue text(final String valueText) {
+      return new CustomFieldValue(null, null, null, null, null, valueText);
+    }
+
+    public static CustomFieldValue optionId(final String valueOptionId) {
+      return new CustomFieldValue(null, null, null, null, valueOptionId, null);
+    }
+
+    public static CustomFieldValue catalogEntryId(final String valueCatalogEntryId) {
+      return new CustomFieldValue(null, valueCatalogEntryId, null, null, null, null);
+    }
+
+    public static CustomFieldValue link(final String valueLink) {
+      return new CustomFieldValue(null, null, valueLink, null, null, null);
+    }
+
+    public static CustomFieldValue numeric(final String valueNumeric) {
+      return new CustomFieldValue(null, null, null, valueNumeric, null, null);
+    }
+  }
+
+  /// A `CustomFieldEntryPayloadV2`. A `multi_select` field takes one value per selected
+  /// option; an empty `values` list unsets the field.
+  record CustomFieldEntry(String customFieldId, List<CustomFieldValue> values) {
+
+    public CustomFieldEntry {
+      values = values == null ? List.of() : List.copyOf(values);
+    }
+
+    /// Convenience for the common single `text` value case.
+    public CustomFieldEntry(final String customFieldId, final String valueText) {
+      this(customFieldId, List.of(CustomFieldValue.text(valueText)));
+    }
+  }
+
+  /// An `IncidentTimestampValuePayloadV2`. `value` serializes as RFC 3339 and is omitted
+  /// when null.
+  record IncidentTimestampValue(String incidentTimestampId, OffsetDateTime value) {
+  }
+
+  /// A `RetrospectiveIncidentOptionsV2`. `externalId` — the `123` in `INC-123` — is
+  /// serialized as a JSON number and omitted when null; incident.io gates its use per
+  /// organisation.
+  record RetrospectiveIncidentOptions(Long externalId, String postmortemDocumentUrl, String slackChannelId) {
+  }
+
   final class Builder extends Request.Builder {
 
     private String idempotencyKey;
@@ -97,7 +170,10 @@ public interface CreateIncidentRequest extends PostRequest {
     private String statusId;
     private String visibility;
     private String slackTeamId;
-    private Map<String, String> customFieldValues;
+    private String slackChannelNameOverride;
+    private Collection<CustomFieldEntry> customFieldEntries;
+    private Collection<IncidentTimestampValue> incidentTimestampValues;
+    private RetrospectiveIncidentOptions retrospectiveIncidentOptions;
 
     public Builder idempotencyKey(final String idempotencyKey) {
       this.idempotencyKey = idempotencyKey;
@@ -159,8 +235,37 @@ public interface CreateIncidentRequest extends PostRequest {
       return this;
     }
 
+    public Builder slackChannelNameOverride(final String slackChannelNameOverride) {
+      this.slackChannelNameOverride = slackChannelNameOverride;
+      return this;
+    }
+
+    public Builder customFieldEntries(final Collection<CustomFieldEntry> customFieldEntries) {
+      this.customFieldEntries = customFieldEntries;
+      return this;
+    }
+
+    /// Sugar for the text-only case: replaces the entries with one single-value `text`
+    /// entry per map key, in the map's iteration order.
     public Builder customFieldValues(final Map<String, String> customFieldValues) {
-      this.customFieldValues = customFieldValues;
+      if (customFieldValues == null) {
+        this.customFieldEntries = null;
+        return this;
+      }
+      final var entries = new ArrayList<CustomFieldEntry>(customFieldValues.size());
+      customFieldValues.forEach((customFieldId, valueText) ->
+          entries.add(new CustomFieldEntry(customFieldId, valueText)));
+      this.customFieldEntries = entries;
+      return this;
+    }
+
+    public Builder incidentTimestampValues(final Collection<IncidentTimestampValue> incidentTimestampValues) {
+      this.incidentTimestampValues = incidentTimestampValues;
+      return this;
+    }
+
+    public Builder retrospectiveIncidentOptions(final RetrospectiveIncidentOptions retrospectiveIncidentOptions) {
+      this.retrospectiveIncidentOptions = retrospectiveIncidentOptions;
       return this;
     }
 
@@ -177,7 +282,10 @@ public interface CreateIncidentRequest extends PostRequest {
           statusId,
           visibility,
           slackTeamId,
-          customFieldValues == null ? Map.of() : Map.copyOf(customFieldValues)
+          slackChannelNameOverride,
+          customFieldEntries == null ? List.of() : List.copyOf(customFieldEntries),
+          incidentTimestampValues == null ? List.of() : List.copyOf(incidentTimestampValues),
+          retrospectiveIncidentOptions
       );
     }
   }

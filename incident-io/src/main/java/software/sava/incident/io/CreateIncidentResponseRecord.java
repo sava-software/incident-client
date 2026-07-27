@@ -25,6 +25,7 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            Mode mode,
                                            String name,
                                            String permalink,
+                                           Collection<String> postmortemDocumentIds,
                                            String postmortemDocumentUrl,
                                            String reference,
                                            SeverityV2 severity,
@@ -72,6 +73,7 @@ public record CreateIncidentResponseRecord(String callUrl,
         "mode",
         "name",
         "permalink",
+        "postmortem_document_ids",
         "postmortem_document_url",
         "reference",
         "severity",
@@ -87,18 +89,25 @@ public record CreateIncidentResponseRecord(String callUrl,
         "workload_minutes_working"
     );
 
-    // the inner "user" object holds the same first four fields; the outer lambda alone
-    // handles index 4
-    private static final FieldMatcher ACTOR_FIELDS = FieldMatcher.of(
-        "email", "id", "name", "slack_user_id", "user"
-    );
+    // `ActorV2` is a union: whichever of these is present names the creator
+    private static final FieldMatcher ACTOR_FIELDS = FieldMatcher.of("alert", "api_key", "user", "workflow");
+    private static final FieldMatcher USER_FIELDS = FieldMatcher.of("email", "id", "name", "role", "slack_user_id");
+    private static final FieldMatcher ID_TITLE_FIELDS = FieldMatcher.of("id", "title");
     private static final FieldMatcher CUSTOM_FIELD_ENTRY_FIELDS = FieldMatcher.of("custom_field", "values");
     private static final FieldMatcher CUSTOM_FIELD_FIELDS = FieldMatcher.of("id", "name", "field_type");
-    private static final FieldMatcher VALUE_TEXT_FIELDS = FieldMatcher.of("value_text");
+    private static final FieldMatcher CUSTOM_FIELD_VALUE_FIELDS = FieldMatcher.of(
+        "value_catalog_entry", "value_link", "value_numeric", "value_option", "value_text"
+    );
+    private static final FieldMatcher CUSTOM_FIELD_OPTION_FIELDS = FieldMatcher.of(
+        "custom_field_id", "id", "sort_key", "value"
+    );
+    private static final FieldMatcher CATALOG_ENTRY_FIELDS = FieldMatcher.of(
+        "aliases", "external_id", "id", "name"
+    );
     private static final FieldMatcher DURATION_METRIC_ENTRY_FIELDS = FieldMatcher.of("duration_metric", "value_seconds");
     private static final FieldMatcher ID_NAME_FIELDS = FieldMatcher.of("id", "name");
     private static final FieldMatcher EXTERNAL_ISSUE_FIELDS = FieldMatcher.of(
-        "issue_id", "issue_reference", "issue_name", "issue_permalink", "provider"
+        "issue_name", "issue_permalink", "provider"
     );
     private static final FieldMatcher ROLE_ASSIGNMENT_FIELDS = FieldMatcher.of("assignee", "role");
     private static final FieldMatcher ROLE_FIELDS = FieldMatcher.of("id", "name", "description", "role_type");
@@ -128,6 +137,7 @@ public record CreateIncidentResponseRecord(String callUrl,
     private Mode mode;
     private String name;
     private String permalink;
+    private Collection<String> postmortemDocumentIds;
     private String postmortemDocumentUrl;
     private String reference;
     private SeverityV2 severity;
@@ -159,6 +169,7 @@ public record CreateIncidentResponseRecord(String callUrl,
           mode,
           name,
           permalink,
+          postmortemDocumentIds == null ? List.of() : postmortemDocumentIds,
           postmortemDocumentUrl,
           reference,
           severity,
@@ -213,19 +224,25 @@ public record CreateIncidentResponseRecord(String callUrl,
         case 12 -> mode = ji.applyChars(MODE_PARSER);
         case 13 -> name = ji.readString();
         case 14 -> permalink = ji.readString();
-        case 15 -> postmortemDocumentUrl = ji.readString();
-        case 16 -> reference = ji.readString();
-        case 17 -> severity = parseSeverityV2(ji);
-        case 18 -> slackChannelId = ji.readString();
-        case 19 -> slackChannelName = ji.readString();
-        case 20 -> slackTeamId = ji.readString();
-        case 21 -> summary = ji.readString();
-        case 22 -> updatedAt = OffsetDateTime.parse(ji.readString());
-        case 23 -> visibility = ji.applyChars(VISIBILITY_PARSER);
-        case 24 -> workloadMinutesLate = ji.readDouble();
-        case 25 -> workloadMinutesSleeping = ji.readDouble();
-        case 26 -> workloadMinutesTotal = ji.readDouble();
-        case 27 -> workloadMinutesWorking = ji.readDouble();
+        case 15 -> {
+          postmortemDocumentIds = new ArrayList<>();
+          while (ji.readArray()) {
+            postmortemDocumentIds.add(ji.readString());
+          }
+        }
+        case 16 -> postmortemDocumentUrl = ji.readString();
+        case 17 -> reference = ji.readString();
+        case 18 -> severity = parseSeverityV2(ji);
+        case 19 -> slackChannelId = ji.readString();
+        case 20 -> slackChannelName = ji.readString();
+        case 21 -> slackTeamId = ji.readString();
+        case 22 -> summary = ji.readString();
+        case 23 -> updatedAt = OffsetDateTime.parse(ji.readString());
+        case 24 -> visibility = ji.applyChars(VISIBILITY_PARSER);
+        case 25 -> workloadMinutesLate = ji.readDouble();
+        case 26 -> workloadMinutesSleeping = ji.readDouble();
+        case 27 -> workloadMinutesTotal = ji.readDouble();
+        case 28 -> workloadMinutesWorking = ji.readDouble();
         default -> ji.skip();
       }
       return true;
@@ -233,35 +250,88 @@ public record CreateIncidentResponseRecord(String callUrl,
 
     private ActorV2 parseActorV2(final JsonIterator ji) {
       final var p = new Object() {
-        String email, id, name, slackUserId;
+        AlertActorV2 alert;
+        ApiKeyActorV2 apiKey;
+        UserV2 user;
+        WorkflowActorV2 workflow;
       };
       ji.testObject(ACTOR_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> p.email = ji1.readString();
-          case 1 -> p.id = ji1.readString();
-          case 2 -> p.name = ji1.readString();
-          case 3 -> p.slackUserId = ji1.readString();
-          case 4 -> ji1.testObject(ACTOR_FIELDS, (userField, ji2) -> {
-            switch (userField) {
-              case 0 -> p.email = ji2.readString();
-              case 1 -> p.id = ji2.readString();
-              case 2 -> p.name = ji2.readString();
-              case 3 -> p.slackUserId = ji2.readString();
-              default -> ji2.skip();
-            }
-            return true;
-          });
+          case 0 -> {
+            final var alert = parseIdTitle(ji1);
+            p.alert = new AlertActorV2(alert.id, alert.name);
+          }
+          case 1 -> {
+            final var apiKey = parseIdName(ji1);
+            p.apiKey = new ApiKeyActorV2(apiKey.id, apiKey.name);
+          }
+          case 2 -> p.user = parseUserV2(ji1);
+          case 3 -> {
+            final var workflow = parseIdName(ji1);
+            p.workflow = new WorkflowActorV2(workflow.id, workflow.name);
+          }
           default -> ji1.skip();
         }
         return true;
       });
-      return new ActorV2(p.email, p.id, p.name, p.slackUserId);
+      return new ActorV2(p.alert, p.apiKey, p.user, p.workflow);
+    }
+
+    private UserV2 parseUserV2(final JsonIterator ji) {
+      final var p = new Object() {
+        String email, id, name, role, slackUserId;
+      };
+      ji.testObject(USER_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.email = ji1.readString();
+          case 1 -> p.id = ji1.readString();
+          case 2 -> p.name = ji1.readString();
+          case 3 -> p.role = ji1.readString();
+          case 4 -> p.slackUserId = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return new UserV2(p.email, p.id, p.name, p.role, p.slackUserId);
+    }
+
+    /// Shared holder for the `{id, name}` and `{id, title}` actor shapes.
+    private static final class IdName {
+
+      private String id;
+      private String name;
+    }
+
+    private IdName parseIdName(final JsonIterator ji) {
+      final var p = new IdName();
+      ji.testObject(ID_NAME_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return p;
+    }
+
+    private IdName parseIdTitle(final JsonIterator ji) {
+      final var p = new IdName();
+      ji.testObject(ID_TITLE_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.name = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return p;
     }
 
     private CustomFieldEntryV2 parseCustomFieldEntryV2(final JsonIterator ji) {
       final var p = new Object() {
         String customFieldId, customFieldName, customFieldType;
-        Object value;
+        Collection<CustomFieldValueV2> values;
       };
       ji.testObject(CUSTOM_FIELD_ENTRY_FIELDS, (field, ji1) -> {
         switch (field) {
@@ -275,24 +345,87 @@ public record CreateIncidentResponseRecord(String callUrl,
             return true;
           });
           case 1 -> {
-            // V2 response for values is an array of objects
-            if (ji1.readArray()) {
-              ji1.testObject(VALUE_TEXT_FIELDS, (valueField, ji2) -> {
-                if (valueField == 0) {
-                  p.value = ji2.readString();
-                } else {
-                  ji2.skip();
-                }
-                return true;
-              });
-              ji1.skipRestOfArray();
+            // a multi_select field carries one value per selected option
+            p.values = new ArrayList<>();
+            while (ji1.readArray()) {
+              p.values.add(parseCustomFieldValueV2(ji1));
             }
           }
           default -> ji1.skip();
         }
         return true;
       });
-      return new CustomFieldEntryV2(p.customFieldId, p.customFieldName, p.customFieldType, p.value);
+      return new CustomFieldEntryV2(
+          p.customFieldId,
+          p.customFieldName,
+          p.customFieldType,
+          p.values == null ? List.of() : p.values
+      );
+    }
+
+    private CustomFieldValueV2 parseCustomFieldValueV2(final JsonIterator ji) {
+      final var p = new Object() {
+        EmbeddedCatalogEntryV2 valueCatalogEntry;
+        String valueLink, valueNumeric, valueText;
+        CustomFieldOptionV2 valueOption;
+      };
+      ji.testObject(CUSTOM_FIELD_VALUE_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.valueCatalogEntry = parseEmbeddedCatalogEntryV2(ji1);
+          case 1 -> p.valueLink = ji1.readString();
+          case 2 -> p.valueNumeric = ji1.readString();
+          case 3 -> p.valueOption = parseCustomFieldOptionV2(ji1);
+          case 4 -> p.valueText = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return new CustomFieldValueV2(
+          p.valueCatalogEntry, p.valueLink, p.valueNumeric, p.valueOption, p.valueText
+      );
+    }
+
+    private CustomFieldOptionV2 parseCustomFieldOptionV2(final JsonIterator ji) {
+      final var p = new Object() {
+        String customFieldId, id, value;
+        long sortKey;
+      };
+      ji.testObject(CUSTOM_FIELD_OPTION_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.customFieldId = ji1.readString();
+          case 1 -> p.id = ji1.readString();
+          case 2 -> p.sortKey = ji1.readLong();
+          case 3 -> p.value = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return new CustomFieldOptionV2(p.customFieldId, p.id, p.sortKey, p.value);
+    }
+
+    private EmbeddedCatalogEntryV2 parseEmbeddedCatalogEntryV2(final JsonIterator ji) {
+      final var p = new Object() {
+        Collection<String> aliases;
+        String externalId, id, name;
+      };
+      ji.testObject(CATALOG_ENTRY_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> {
+            p.aliases = new ArrayList<>();
+            while (ji1.readArray()) {
+              p.aliases.add(ji1.readString());
+            }
+          }
+          case 1 -> p.externalId = ji1.readString();
+          case 2 -> p.id = ji1.readString();
+          case 3 -> p.name = ji1.readString();
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return new EmbeddedCatalogEntryV2(
+          p.aliases == null ? List.of() : p.aliases, p.externalId, p.id, p.name
+      );
     }
 
     private IncidentDurationMetricWithValueV2 parseDurationMetricV2(final JsonIterator ji) {
@@ -302,14 +435,11 @@ public record CreateIncidentResponseRecord(String callUrl,
       };
       ji.testObject(DURATION_METRIC_ENTRY_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> ji1.testObject(ID_NAME_FIELDS, (metricField, ji2) -> {
-            switch (metricField) {
-              case 0 -> p.id = ji2.readString();
-              case 1 -> p.name = ji2.readString();
-              default -> ji2.skip();
-            }
-            return true;
-          });
+          case 0 -> {
+            final var metric = parseIdName(ji1);
+            p.id = metric.id;
+            p.name = metric.name;
+          }
           case 1 -> p.value = ji1.readLong();
           default -> ji1.skip();
         }
@@ -320,30 +450,29 @@ public record CreateIncidentResponseRecord(String callUrl,
 
     private ExternalIssueReferenceV2 parseExternalIssueReferenceV2(final JsonIterator ji) {
       final var p = new Object() {
-        String id, ref, title, url, provider;
+        String name, permalink, provider;
       };
       ji.testObject(EXTERNAL_ISSUE_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> p.id = ji1.readString();
-          case 1 -> p.ref = ji1.readString();
-          case 2 -> p.title = ji1.readString();
-          case 3 -> p.url = ji1.readString();
-          case 4 -> p.provider = ji1.readString();
+          case 0 -> p.name = ji1.readString();
+          case 1 -> p.permalink = ji1.readString();
+          case 2 -> p.provider = ji1.readString();
           default -> ji1.skip();
         }
         return true;
       });
-      return new ExternalIssueReferenceV2(p.id, p.ref, p.title, p.url, p.provider);
+      return new ExternalIssueReferenceV2(p.name, p.permalink, p.provider);
     }
 
     private IncidentRoleAssignmentV2 parseIncidentRoleAssignmentV2(final JsonIterator ji) {
       final var p = new Object() {
-        ActorV2 assignee;
+        UserV2 assignee;
         IncidentRoleV2 role;
       };
       ji.testObject(ROLE_ASSIGNMENT_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> p.assignee = parseActorV2(ji1);
+          // the assignee is a UserV2, not the ActorV2 union the creator is
+          case 0 -> p.assignee = parseUserV2(ji1);
           case 1 -> p.role = parseIncidentRoleV2(ji1);
           default -> ji1.skip();
         }
@@ -393,14 +522,11 @@ public record CreateIncidentResponseRecord(String callUrl,
       };
       ji.testObject(TIMESTAMP_ENTRY_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> ji1.testObject(ID_NAME_FIELDS, (timestampField, ji2) -> {
-            switch (timestampField) {
-              case 0 -> p.id = ji2.readString();
-              case 1 -> p.name = ji2.readString();
-              default -> ji2.skip();
-            }
-            return true;
-          });
+          case 0 -> {
+            final var timestamp = parseIdName(ji1);
+            p.id = timestamp.id;
+            p.name = timestamp.name;
+          }
           case 1 -> ji1.testObject(VALUE_FIELDS, (valueField, ji2) -> {
             if (valueField == 0) {
               p.value = OffsetDateTime.parse(ji2.readString());

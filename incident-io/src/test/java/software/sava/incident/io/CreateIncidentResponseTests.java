@@ -17,10 +17,14 @@ final class CreateIncidentResponseTests {
           "call_url": "https://zoom.us/j/123",
           "created_at": "2024-05-01T12:30:00Z",
           "creator": {
-            "email": "creator@example.com",
-            "id": "actor-1",
-            "name": "Creator Name",
-            "slack_user_id": "U123",
+            "user": {
+              "email": "creator@example.com",
+              "id": "actor-1",
+              "name": "Creator Name",
+              "role": "owner",
+              "slack_user_id": "U123",
+              "unknown_user_field": true
+            },
             "unknown_actor_field": true
           },
           "custom_field_entries": [
@@ -33,7 +37,7 @@ final class CreateIncidentResponseTests {
               },
               "values": [
                 {"value_text": "Payments", "unknown": 1},
-                {"value_text": "ignored-second-entry"}
+                {"value_text": "second-entry"}
               ],
               "unknown": []
             }
@@ -46,8 +50,6 @@ final class CreateIncidentResponseTests {
             }
           ],
           "external_issue_reference": {
-            "issue_id": "JIRA-1",
-            "issue_reference": "INC-1",
             "issue_name": "Issue Title",
             "issue_permalink": "https://jira.example.com/JIRA-1",
             "provider": "jira",
@@ -58,13 +60,12 @@ final class CreateIncidentResponseTests {
           "incident_role_assignments": [
             {
               "assignee": {
-                "user": {
-                  "email": "lead@example.com",
-                  "id": "actor-2",
-                  "name": "Lead Name",
-                  "slack_user_id": "U456",
-                  "unknown": "z"
-                }
+                "email": "lead@example.com",
+                "id": "actor-2",
+                "name": "Lead Name",
+                "role": "responder",
+                "slack_user_id": "U456",
+                "unknown": "z"
               },
               "role": {
                 "id": "role-1",
@@ -80,7 +81,7 @@ final class CreateIncidentResponseTests {
             "id": "status-1",
             "name": "Investigating",
             "description": "We are investigating",
-            "category": "active",
+            "category": "live",
             "unknown": false
           },
           "incident_timestamp_values": [
@@ -99,6 +100,7 @@ final class CreateIncidentResponseTests {
           "mode": "standard",
           "name": "Incident Name",
           "permalink": "https://app.incident.io/incidents/1",
+          "postmortem_document_ids": ["pm-1", "pm-2"],
           "postmortem_document_url": "https://docs.example.com/postmortem",
           "reference": "INC-123",
           "severity": {
@@ -130,10 +132,14 @@ final class CreateIncidentResponseTests {
     assertEquals(OffsetDateTime.parse("2024-05-01T12:30:00Z"), response.createdAt());
 
     final var creator = response.creator();
-    assertEquals("creator@example.com", creator.email());
-    assertEquals("actor-1", creator.id());
-    assertEquals("Creator Name", creator.name());
-    assertEquals("U123", creator.slackUserId());
+    assertNull(creator.alert());
+    assertNull(creator.apiKey());
+    assertNull(creator.workflow());
+    assertEquals("creator@example.com", creator.user().email());
+    assertEquals("actor-1", creator.user().id());
+    assertEquals("Creator Name", creator.user().name());
+    assertEquals("owner", creator.user().role());
+    assertEquals("U123", creator.user().slackUserId());
 
     final var customFieldEntries = List.copyOf(response.customFieldEntries());
     assertEquals(1, customFieldEntries.size());
@@ -141,7 +147,11 @@ final class CreateIncidentResponseTests {
     assertEquals("cf-1", customFieldEntry.customFieldId());
     assertEquals("Affected Team", customFieldEntry.customFieldName());
     assertEquals("single_select", customFieldEntry.customFieldType());
-    assertEquals("Payments", customFieldEntry.value());
+    // every value is kept, not just the first
+    final var values = List.copyOf(customFieldEntry.values());
+    assertEquals(2, values.size());
+    assertEquals("Payments", values.getFirst().valueText());
+    assertEquals("second-entry", values.get(1).valueText());
 
     final var durationMetrics = List.copyOf(response.durationMetrics());
     assertEquals(1, durationMetrics.size());
@@ -151,10 +161,8 @@ final class CreateIncidentResponseTests {
     assertEquals(3600L, durationMetric.valueSeconds());
 
     final var externalIssueReference = response.externalIssueReference();
-    assertEquals("JIRA-1", externalIssueReference.issueId());
-    assertEquals("INC-1", externalIssueReference.issueReference());
-    assertEquals("Issue Title", externalIssueReference.issueTitle());
-    assertEquals("https://jira.example.com/JIRA-1", externalIssueReference.issueUrl());
+    assertEquals("Issue Title", externalIssueReference.issueName());
+    assertEquals("https://jira.example.com/JIRA-1", externalIssueReference.issuePermalink());
     assertEquals("jira", externalIssueReference.provider());
 
     assertTrue(response.hasDebrief());
@@ -166,6 +174,7 @@ final class CreateIncidentResponseTests {
     assertEquals("lead@example.com", roleAssignment.assignee().email());
     assertEquals("actor-2", roleAssignment.assignee().id());
     assertEquals("Lead Name", roleAssignment.assignee().name());
+    assertEquals("responder", roleAssignment.assignee().role());
     assertEquals("U456", roleAssignment.assignee().slackUserId());
     assertEquals("role-1", roleAssignment.role().id());
     assertEquals("Incident Lead", roleAssignment.role().name());
@@ -176,7 +185,7 @@ final class CreateIncidentResponseTests {
     assertEquals("status-1", incidentStatus.id());
     assertEquals("Investigating", incidentStatus.name());
     assertEquals("We are investigating", incidentStatus.description());
-    assertEquals("active", incidentStatus.category());
+    assertEquals("live", incidentStatus.category());
 
     final var timestampValues = List.copyOf(response.incidentTimestampValues());
     assertEquals(1, timestampValues.size());
@@ -193,6 +202,7 @@ final class CreateIncidentResponseTests {
     assertEquals(CreateIncidentResponse.Mode.standard, response.mode());
     assertEquals("Incident Name", response.name());
     assertEquals("https://app.incident.io/incidents/1", response.permalink());
+    assertEquals(List.of("pm-1", "pm-2"), List.copyOf(response.postmortemDocumentIds()));
     assertEquals("https://docs.example.com/postmortem", response.postmortemDocumentUrl());
     assertEquals("INC-123", response.reference());
 
@@ -233,6 +243,7 @@ final class CreateIncidentResponseTests {
     assertNull(response.mode());
     assertNull(response.name());
     assertNull(response.permalink());
+    assertEquals(List.of(), response.postmortemDocumentIds());
     assertNull(response.postmortemDocumentUrl());
     assertNull(response.reference());
     assertNull(response.severity());
@@ -248,6 +259,121 @@ final class CreateIncidentResponseTests {
     assertNull(response.workloadMinutesWorking());
   }
 
+  /// An incident created through this client is created by an API key, so `api_key` — not
+  /// `user` — is the actor variant the create response actually carries.
+  @Test
+  void parseApiKeyCreator() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"creator":{"api_key":{"id":"key-1","name":"My test API key"}},"name":"after"}}"""));
+    final var creator = response.creator();
+    assertNull(creator.alert());
+    assertNull(creator.user());
+    assertNull(creator.workflow());
+    assertEquals("key-1", creator.apiKey().id());
+    assertEquals("My test API key", creator.apiKey().name());
+    assertEquals("after", response.name());
+  }
+
+  @Test
+  void parseAlertCreator() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"creator":{"alert":{"id":"alert-1","title":"PG::Error failed to connect"}},"name":"after"}}"""));
+    final var creator = response.creator();
+    assertNull(creator.apiKey());
+    assertNull(creator.user());
+    assertNull(creator.workflow());
+    assertEquals("alert-1", creator.alert().id());
+    assertEquals("PG::Error failed to connect", creator.alert().title());
+    assertEquals("after", response.name());
+  }
+
+  @Test
+  void parseWorkflowCreator() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"creator":{"workflow":{"id":"wf-1","name":"My little workflow"}},"name":"after"}}"""));
+    final var creator = response.creator();
+    assertNull(creator.alert());
+    assertNull(creator.apiKey());
+    assertNull(creator.user());
+    assertEquals("wf-1", creator.workflow().id());
+    assertEquals("My little workflow", creator.workflow().name());
+    assertEquals("after", response.name());
+  }
+
+  @Test
+  void parseCreatorWithNoKnownVariant() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"creator":{"future_actor":{"id":"x"}},"name":"after"}}"""));
+    final var creator = response.creator();
+    assertNull(creator.alert());
+    assertNull(creator.apiKey());
+    assertNull(creator.user());
+    assertNull(creator.workflow());
+    assertEquals("after", response.name());
+  }
+
+  @Test
+  void parseCustomFieldValueVariants() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"custom_field_entries":[{
+          "custom_field":{"id":"cf-1","name":"Owner","field_type":"single_select"},
+          "values":[
+            {"value_option":{"custom_field_id":"cf-1","id":"opt-1","sort_key":10,"value":"Product","unknown":1}},
+            {"value_catalog_entry":{"aliases":["lawrence@example.com","lawrence"],\
+        "external_id":"ext-1","id":"cat-1","name":"Primary On-call","unknown":2}},
+            {"value_link":"https://example.com/","value_numeric":"123.456","value_text":"text","unknown":3}
+          ]}],"name":"after"}}"""));
+
+    final var entries = List.copyOf(response.customFieldEntries());
+    assertEquals(1, entries.size());
+    final var values = List.copyOf(entries.getFirst().values());
+    assertEquals(3, values.size());
+
+    final var option = values.getFirst().valueOption();
+    assertEquals("cf-1", option.customFieldId());
+    assertEquals("opt-1", option.id());
+    assertEquals(10L, option.sortKey());
+    assertEquals("Product", option.value());
+    assertNull(values.getFirst().valueCatalogEntry());
+    assertNull(values.getFirst().valueText());
+
+    final var catalogEntry = values.get(1).valueCatalogEntry();
+    assertEquals(List.of("lawrence@example.com", "lawrence"), List.copyOf(catalogEntry.aliases()));
+    assertEquals("ext-1", catalogEntry.externalId());
+    assertEquals("cat-1", catalogEntry.id());
+    assertEquals("Primary On-call", catalogEntry.name());
+    assertNull(values.get(1).valueOption());
+
+    assertEquals("https://example.com/", values.get(2).valueLink());
+    assertEquals("123.456", values.get(2).valueNumeric());
+    assertEquals("text", values.get(2).valueText());
+
+    assertEquals("after", response.name());
+  }
+
+  @Test
+  void parseCatalogEntryWithoutAliases() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"custom_field_entries":[{"custom_field":{"id":"cf-1"},
+          "values":[{"value_catalog_entry":{"id":"cat-1","name":"Primary On-call"}}]}],"name":"after"}}"""));
+    final var values = List.copyOf(List.copyOf(response.customFieldEntries()).getFirst().values());
+    assertEquals(List.of(), List.copyOf(values.getFirst().valueCatalogEntry().aliases()));
+    assertEquals("after", response.name());
+  }
+
+  /// An entry with no `values` key at all is a different path from `"values":[]` — the
+  /// accumulator is never allocated, so the absent-collection default is what runs.
+  @Test
+  void parseCustomFieldEntryWithoutValues() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"custom_field_entries":[{"custom_field":{"id":"cf-5","name":"Owner"}}],"name":"after"}}"""));
+    final var entries = List.copyOf(response.customFieldEntries());
+    assertEquals(1, entries.size());
+    assertEquals("cf-5", entries.getFirst().customFieldId());
+    assertEquals(List.of(), List.copyOf(entries.getFirst().values()));
+    assertEquals("after", response.name());
+  }
+
   @Test
   void parseEmptyCustomFieldValuesArray() {
     final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
@@ -255,7 +381,7 @@ final class CreateIncidentResponseTests {
     final var entries = List.copyOf(response.customFieldEntries());
     assertEquals(1, entries.size());
     assertEquals("cf-2", entries.getFirst().customFieldId());
-    assertNull(entries.getFirst().value());
+    assertEquals(List.of(), List.copyOf(entries.getFirst().values()));
     assertEquals("after", response.name());
   }
 
@@ -266,7 +392,7 @@ final class CreateIncidentResponseTests {
     final var entries = List.copyOf(response.customFieldEntries());
     assertEquals(1, entries.size());
     assertEquals("cf-4", entries.getFirst().customFieldId());
-    assertNull(entries.getFirst().value());
+    assertEquals(List.of(), List.copyOf(entries.getFirst().values()));
     assertEquals("after-tail", response.name());
   }
 
@@ -277,8 +403,16 @@ final class CreateIncidentResponseTests {
     final var entries = List.copyOf(response.customFieldEntries());
     assertEquals(1, entries.size());
     assertEquals("cf-3", entries.getFirst().customFieldId());
-    assertNull(entries.getFirst().value());
+    assertEquals(List.of(), List.copyOf(entries.getFirst().values()));
     assertEquals("after-null", response.name());
+  }
+
+  @Test
+  void parseEmptyPostmortemDocumentIds() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"postmortem_document_ids":[],"name":"after"}}"""));
+    assertEquals(List.of(), List.copyOf(response.postmortemDocumentIds()));
+    assertEquals("after", response.name());
   }
 
   @Test
