@@ -11,7 +11,7 @@ public final class WebhookIncidentClientFactory extends BaseWebhookIncidentClien
   }
 
   @Override
-  WebhookFormat format(final WebhookConfig config) {
+  protected WebhookFormat format(final WebhookConfig config) {
     return WebhookFormats.GENERIC_JSON;
   }
 }

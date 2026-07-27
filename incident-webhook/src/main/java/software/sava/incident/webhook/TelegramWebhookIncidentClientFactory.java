@@ -14,7 +14,7 @@ public final class TelegramWebhookIncidentClientFactory extends BaseWebhookIncid
   }
 
   @Override
-  WebhookFormat format(final WebhookConfig config) {
+  protected WebhookFormat format(final WebhookConfig config) {
     final var chatId = config.chatId();
     if (chatId == null || chatId.isBlank()) {
       throw new IllegalStateException("WebhookConfig chatId is required for the telegram provider.");

@@ -38,7 +38,9 @@ variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON bo
   `sendMessage` rejects longer messages outright.
 
 Supporting another product (Discord, Google Chat, ...) is one `WebhookFormat`
-implementation plus a factory registration.
+implementation plus a factory registration — see
+[Writing Your Own Provider](#writing-your-own-provider); no changes to this library are
+required.
 
 ## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/WebhookExamples.java)
 
@@ -76,6 +78,50 @@ final var client = WebhookClient.clientBuilder()
 response body (`ok` for Slack) or `delivered` when the body is empty, and `url()` is
 null. Non-2xx responses fail with a `WebhookRequestException` whose message carries the
 status and response body but never the endpoint URL — webhook URLs are credentials.
+
+## Writing Your Own Provider
+
+`WebhookFormat` is the whole seam: one method rendering an `IncidentAlert` into the JSON
+body. Transport, headers, and error handling never change per platform. In code, a
+format is a lambda — `WebhookFormats.renderPlainText(alert)` supplies the shared
+`[SEVERITY] summary / details / Source: ...` text so chat-style platforms only wrap it:
+
+```java
+final WebhookFormat discord = alert -> String.format("""
+    {"content":"%s"}""", JsonUtil.escapeJson(WebhookFormats.renderPlainText(alert)));
+
+final IncidentClient client = WebhookClient.clientBuilder()
+    .endpoint("https://discord.com/api/webhooks/...")
+    .createClient()
+    .incidentClient(discord);
+```
+
+To register your own provider id for config-driven use, publish an
+`IncidentClientFactory` from your jar via `ServiceLoader` (a `provides` clause in
+`module-info` plus a `META-INF/services` entry). A provider fully described by
+`WebhookConfig` extends `BaseWebhookIncidentClientFactory` and returns its format; a
+provider needing extra config fields implements the SPI directly and composes
+`WebhookConfig.parser()`, keeping the shared field handling and the strict
+unknown-field errors:
+
+```java
+@Override
+public IncidentClient createClient(final JsonIterator ji) {
+  final var parser = WebhookConfig.parser();
+  ji.testObject((buf, offset, len, fieldJi) -> {
+    if (fieldEquals("roomId", buf, offset, len)) {
+      this.roomId = fieldJi.readString();
+      return true;
+    }
+    return parser.test(buf, offset, len, fieldJi);   // endpoint, headers, ...
+  });
+  return parser.createConfig().createClientBuilder().createClient()
+      .incidentClient(roomFormat(roomId));
+}
+```
+
+`CustomProviderExtensionTests` in this module's test sources exercises both routes
+end-to-end using only public API.
 
 ## Configuration
 

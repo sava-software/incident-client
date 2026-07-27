@@ -35,6 +35,11 @@ final class WebhookConfigTests {
 
   @Test
   void prefixDotIsOptional() {
+    // both spellings normalize to the dot-terminated prefix composing factories read
+    assertEquals("incident.", WebhookConfig.parser("incident").prefix());
+    assertEquals("incident.", WebhookConfig.parser("incident.").prefix());
+    assertEquals("", WebhookConfig.parser(null).prefix());
+
     final var properties = new Properties();
     properties.setProperty("incident.endpoint", "https://hooks.example.com/notify");
     final var config = WebhookConfig.parseConfig(properties, "incident.");

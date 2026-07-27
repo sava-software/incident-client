@@ -9,18 +9,25 @@ import java.util.Properties;
 
 /// Shared factory plumbing: every webhook provider id parses the same [WebhookConfig] and
 /// differs only in the [WebhookFormat] paired with the client.
-abstract class BaseWebhookIncidentClientFactory implements IncidentClientFactory {
+///
+/// Public so third-party jars can register their own provider ids: extend with a public
+/// no-arg constructor, return the format from [#format(WebhookConfig)], and register the
+/// class as a `ServiceLoader` service for `IncidentClientFactory` (a `provides` clause in
+/// `module-info` plus a `META-INF/services` entry). Providers whose config needs fields
+/// beyond [WebhookConfig] should instead implement `IncidentClientFactory` directly and
+/// compose [WebhookConfig#parser()]; see the module README.
+public abstract class BaseWebhookIncidentClientFactory implements IncidentClientFactory {
 
   private final String provider;
 
-  BaseWebhookIncidentClientFactory(final String provider) {
+  protected BaseWebhookIncidentClientFactory(final String provider) {
     this.provider = provider;
   }
 
   /// The [WebhookFormat] paired with the created client. Stateless providers ignore
   /// `config`; config-dependent formats (Telegram's chat id) read their state from it and
   /// throw an IllegalStateException when it is missing.
-  abstract WebhookFormat format(final WebhookConfig config);
+  protected abstract WebhookFormat format(final WebhookConfig config);
 
   @Override
   public final String provider() {

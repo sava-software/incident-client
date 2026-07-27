@@ -69,15 +69,23 @@ public final class WebhookConfig extends HttpApiClientConfig {
   }
 
   public static WebhookConfig parseConfig(final Properties properties, final String prefix) {
-    final var parser = new Parser(prefix);
+    final var parser = parser(prefix);
     parser.parseConfig(properties);
     return parser.createConfig();
   }
 
   public static WebhookConfig parseConfig(final JsonIterator ji) {
-    final var parser = new Parser(null);
+    final var parser = parser();
     ji.testObject(parser);
     return parser.createConfig();
+  }
+
+  public static Parser parser() {
+    return new Parser(null);
+  }
+
+  public static Parser parser(final String prefix) {
+    return new Parser(prefix);
   }
 
   public String bearerToken() {
@@ -95,7 +103,23 @@ public final class WebhookConfig extends HttpApiClientConfig {
     return chatId;
   }
 
-  private static final class Parser extends HttpApiClientConfig.Parser {
+  /// Public for composition by third-party provider factories whose config carries
+  /// fields beyond this one's: parse your own fields first and delegate everything else
+  /// here, so `endpoint`/`requestTimeout`/`headers`/`bearerToken` handling — and the
+  /// strict unknown-field error — stay shared:
+  ///
+  /// ```java
+  /// final var parser = WebhookConfig.parser();
+  /// ji.testObject((buf, offset, len, ji2) -> {
+  ///   if (fieldEquals("roomId", buf, offset, len)) {
+  ///     this.roomId = ji2.readString();
+  ///     return true;
+  ///   }
+  ///   return parser.test(buf, offset, len, ji2);
+  /// });
+  /// final var config = parser.createConfig();
+  /// ```
+  public static final class Parser extends HttpApiClientConfig.Parser {
 
     private String bearerToken;
     private final Map<String, String> headers;
@@ -106,7 +130,14 @@ public final class WebhookConfig extends HttpApiClientConfig {
       this.headers = new LinkedHashMap<>();
     }
 
-    private WebhookConfig createConfig() {
+    /// The normalized key prefix (dot-terminated, or empty) — composing factories read
+    /// their own properties as `prefix() + "field"`.
+    public String prefix() {
+      return prefix;
+    }
+
+    /// Validates and creates the parsed config; `endpoint` is required.
+    public WebhookConfig createConfig() {
       if (endpoint == null) {
         throw new IllegalStateException("WebhookConfig endpoint is required.");
       }
@@ -121,8 +152,10 @@ public final class WebhookConfig extends HttpApiClientConfig {
       );
     }
 
+    /// Reads this config's properties under the parser's prefix; a composing factory
+    /// reads its own additional properties alongside.
     @Override
-    protected void parseConfig(final Properties properties) {
+    public void parseConfig(final Properties properties) {
       super.parseConfig(properties);
       this.bearerToken = properties.getProperty(prefix + "bearerToken");
       this.chatId = properties.getProperty(prefix + "chatId");

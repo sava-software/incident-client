@@ -119,9 +119,22 @@ public enum WebhookFormats implements WebhookFormat {
         .replace(">", "&gt;");
   }
 
-  /// The shared plain multi-line rendering of an alert, free of any product markup;
-  /// formats whose product requires escaping (Slack entities) layer it on top.
-  static String renderPlainText(final IncidentAlert alert) {
+  /// The shared plain multi-line rendering of an alert, free of any product markup:
+  ///
+  /// ```
+  /// [CRITICAL] summary
+  /// details
+  /// Source: source
+  /// Time: 2026-07-26T12:30:45Z
+  /// Key: key
+  /// customField: value
+  /// ```
+  ///
+  /// Public for custom [WebhookFormat] implementations targeting chat-style platforms —
+  /// wrap it in the platform's envelope (JSON-escaped via `JsonUtil.escapeJson`) instead
+  /// of re-implementing the layout. Formats whose product requires text escaping (Slack
+  /// entities) layer it on top; none is applied here.
+  public static String renderPlainText(final IncidentAlert alert) {
     final var text = new StringBuilder(1_024);
     text.append('[').append(alert.severity()).append("] ").append(alert.summary());
     final var details = alert.details();

@@ -15,7 +15,7 @@ import static software.sava.incident.core.json.JsonUtil.escapeJson;
 /// it is per-destination configuration, which is why this format carries state where the
 /// [WebhookFormats] constants do not.
 ///
-/// No `parse_mode` is sent, so the text is plain and no Telegram markup escaping
+/// No `parse_mode` is sent, so the text is plain, and no Telegram markup escaping
 /// applies. Text over [#MAX_TEXT_LENGTH] characters is truncated client-side:
 /// `sendMessage` rejects longer messages outright, and a truncated alert beats an
 /// undelivered one.

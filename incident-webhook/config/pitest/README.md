@@ -57,7 +57,7 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   `substring(0, MAX_TEXT_LENGTH)` returns identical content — both branches
   produce the same string, so no input can distinguish them. The at-limit and
   over-limit behaviours are pinned by exact-output tests.
-- `# always-true-delegate` (config: `WebhookConfig$Parser.test:150`) —
+- `# always-true-delegate` (config: `WebhookConfig$Parser.test:183`) —
   `return super.test(...)` where the superclass either returns true or throws
   on unknown fields; the mutated constant-true return preserves the call and
   its side effects, so no input can distinguish it. Escape hatch: a superclass

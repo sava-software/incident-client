@@ -12,7 +12,7 @@ public final class SlackWebhookIncidentClientFactory extends BaseWebhookIncident
   }
 
   @Override
-  WebhookFormat format(final WebhookConfig config) {
+  protected WebhookFormat format(final WebhookConfig config) {
     return WebhookFormats.SLACK_TEXT;
   }
 }
