@@ -22,6 +22,10 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   serialization, response parsing, typed error-envelope exceptions.
 - `incident-pagerduty/` — PagerDuty **Events API v2** client (`/v2/enqueue`,
   `/v2/change/enqueue`): trigger/acknowledge/resolve alert events and change events.
+- `incident-webhook/` — generic webhook POSTer: one shared transport/config/exception
+  stack; per-product variance is isolated in `WebhookFormat` (built-ins:
+  `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`). Notification
+  only — no incident lifecycle, `supportsResolve()` is false.
 - `incident-examples/` — runnable usage examples; not published.
 
 ### Provider-neutral API (`software.sava.incident.core.api`)
@@ -40,9 +44,10 @@ provider can be swapped via configuration:
   max-retries / give-up-after variants).
 
 Adapters: `PagerDutyIncidentClient` (dedup-key based, `details` carried in
-`custom_details`) and `IncidentIoIncidentClient` (workspace-specific severity/type/status
-ids are supplied at build time; resolve unsupported). When extending the common model,
-update both adapters and their mapping tests.
+`custom_details`), `IncidentIoIncidentClient` (workspace-specific severity/type/status
+ids are supplied at build time; resolve unsupported), and `WebhookIncidentClient`
+(renders the alert with a `WebhookFormat`; resolve unsupported). When extending the
+common model, update every adapter (and the webhook formats) and their mapping tests.
 
 ## Canonical API references
 
@@ -85,10 +90,12 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
                                                  #   :incident-core:pitestJson|pitestConfig|pitestApi
                                                  #   :incident-io:pitestRequest|pitestResponse|pitestConfig|pitestAdapter
                                                  #   :incident-pagerduty:pitestPayload|pitestResponse|pitestConfig|pitestAdapter
+                                                 #   :incident-webhook:pitestFormat|pitestConfig|pitestAdapter
 ./gradlew :<module>:pitest<Suite>Debt            # unkilled mutants by class, with baseline delta
 ./gradlew :<module>:fuzz<Target> -PmaxFuzzTime=60  # Jazzer fuzzing, e.g.
                                                  #   :incident-io:fuzzRequest|fuzzResponse
                                                  #   :incident-pagerduty:fuzzPayload
+                                                 #   :incident-webhook:fuzzFormat
 ./gradlew :<module>:fuzz<Target>Minimize         # corpus dedup (libFuzzer -merge); -PadoptLocalCorpus folds in local finds
 ```
 

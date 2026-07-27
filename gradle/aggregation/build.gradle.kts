@@ -4,10 +4,9 @@ plugins {
 
 dependencies {
   nmcpAggregation(project(":incident-core"))
-//  nmcpAggregation(project(":incident-io"))
   nmcpAggregation(project(":incident-io"))
-//  nmcpAggregation(project(":incident-io"))
   nmcpAggregation(project(":incident-pagerduty"))
+  nmcpAggregation(project(":incident-webhook"))
 }
 
 tasks.register("publishToGitHubPackages") {

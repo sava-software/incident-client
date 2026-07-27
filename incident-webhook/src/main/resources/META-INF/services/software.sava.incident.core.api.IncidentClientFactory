@@ -1,0 +1,2 @@
+software.sava.incident.webhook.WebhookIncidentClientFactory
+software.sava.incident.webhook.SlackWebhookIncidentClientFactory
