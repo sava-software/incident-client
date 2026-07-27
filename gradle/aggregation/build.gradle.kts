@@ -2,17 +2,21 @@ plugins {
   id("software.sava.build.feature.publish-maven-central")
 }
 
-dependencies {
-  nmcpAggregation(project(":incident-core"))
-  nmcpAggregation(project(":incident-io"))
-  nmcpAggregation(project(":incident-pagerduty"))
-  nmcpAggregation(project(":incident-webhook"))
-}
+val incidentModules = setOf(
+  "incident-core",
+  "incident-io",
+  "incident-pagerduty",
+  "incident-webhook"
+)
+
+//dependencies {
+//  for (module in incidentModules) {
+//    nmcpAggregation(project(":$module"))
+//  }
+//}
 
 tasks.register("publishToGitHubPackages") {
   group = "publishing"
-  dependsOn(
-    ":incident-core:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository",
-    ":incident-pagerduty:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository"
-  )
+  val publishTasks = incidentModules.map { ":$it:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository" }
+  dependsOn(publishTasks)
 }
