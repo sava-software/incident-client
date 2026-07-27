@@ -170,7 +170,7 @@ acknowledges the template digest and is checked by `agentsTemplateInSync` (wired
 the template, sync or **act on** each changed bullet, then update the marker to the
 digest the failure message prints.
 
-<!-- hardening-template sha256:7f9eb869ee7e -->
+<!-- hardening-template sha256:f6dea3f41ab7 -->
 
 > - **Scale verification to the change.** Iterate with the module's `test`
 >   task; before handing off, run only the `pitest<Suite>`(s) whose mutated
@@ -215,6 +215,18 @@ digest the failure message prints.
 >   same mutant can report `SURVIVED` alone and `TIMED_OUT` under
 >   `qualityGate`. Verify a baseline in both modes; union only rows observed to
 >   flip, never every `TIMED_OUT` row.
+> - **A new timed-out mutant is a reviewer-stop, not detection noise.** For
+>   exactly these mutants the ratchet cannot see a weakened covering
+>   assertion — a timeout keeps "detecting" whatever the test asserts — so
+>   each suite's timeouts are an audited set, not a count:
+>   `config/pitest/<suite>-timeouts.csv` holds line-less `class,method,mutator`
+>   keys, and `config/pitest/README.md` the structural cause per member (the
+>   removed loop exit, the reversed cursor, the leaked unlock). The verify
+>   warns on any timeout outside the set — paste the printed row, then write
+>   the cause — and on members matching no mutant; admit a newcomer only with
+>   its cause written. The key is the check's resolution: a new timed-out
+>   mutant in an already-audited method+mutator draws no warning, so name the
+>   line in the README cause and re-read it when that code changes.
 > - **A flaky harness is worse than recorded debt.** If an interleaving or a
 >   boundary cannot be made deterministic, accept the mutant with a written
 >   reason rather than chasing it with sleeps or spin-waits.
@@ -323,7 +335,12 @@ needs editing, and an unset property is the normal published path. Put it in
 included build: every sava-build edit needs the publish task re-run, or this build silently
 keeps resolving the previously published jar with no warning. (Gradle does re-read
 `file:` repositories on each resolution, so a *republished* `0.0.0-test` is picked up
-immediately — the stale case is only a forgotten publish.) When done, drop the property and
+immediately — the stale case is only a forgotten publish.) The warning `settings.gradle.kts`
+prints carries the last-publish age as the tell, but with the configuration cache enabled it
+prints only on a cache miss: a real publish forces one, a *forgotten* publish reuses the entry
+silently. Absence of the warning is not evidence of normal resolution — check
+`<sava-build>/build/sava-test-repo/software/sava/sava-build/maven-metadata.xml` directly when
+behaviour looks stale. When done, drop the property and
 bump the versions in `settings.gradle.kts` to the released sava-build.
 
 ## AGENTS.local.md template

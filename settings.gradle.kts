@@ -23,6 +23,11 @@ pluginManagement {
     }
     // Loud on purpose: with the property set in ~/.gradle/gradle.properties, nothing in
     // this file would otherwise reveal that the versions in the plugins block are ignored.
+    // The printed age is the tell for a forgotten publish, but only on a configuration
+    // cache miss: every real publish forces one, while a forgotten publish reuses the
+    // entry and this script never re-executes. Absence of the line is therefore not
+    // evidence of normal resolution — check the maven-metadata.xml timestamp directly
+    // if consumer behaviour looks stale.
     logger.warn(
       "sava-build: resolving 'software.sava.build*' plugins from LOCAL repo $savaBuildLocalRepo ($age)"
     )
@@ -56,8 +61,8 @@ pluginManagement {
 }
 
 plugins {
-  id("software.sava.build") version "21.5.16"
-  id("software.sava.build.feature.jdk-provisioning") version "21.5.16"
+  id("software.sava.build") version "21.5.17"
+  id("software.sava.build.feature.jdk-provisioning") version "21.5.17"
 }
 
 javaModules {
