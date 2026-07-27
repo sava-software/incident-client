@@ -12,5 +12,6 @@ module software.sava.incident_webhook {
 
   provides software.sava.incident.core.api.IncidentClientFactory with
       software.sava.incident.webhook.WebhookIncidentClientFactory,
-      software.sava.incident.webhook.SlackWebhookIncidentClientFactory;
+      software.sava.incident.webhook.SlackWebhookIncidentClientFactory,
+      software.sava.incident.webhook.TelegramWebhookIncidentClientFactory;
 }

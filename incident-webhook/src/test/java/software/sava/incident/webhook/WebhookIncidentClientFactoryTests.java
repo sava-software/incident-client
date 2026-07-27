@@ -55,6 +55,49 @@ final class WebhookIncidentClientFactoryTests {
   }
 
   @Test
+  void createTelegramFromJson() {
+    final var client = IncidentClients.createClient(JsonIterator.parse("""
+        {"provider":"telegram","config":{"endpoint":"https://api.telegram.org/bot123:ABC/sendMessage","chatId":"-100123"}}"""));
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals("-100123", format.chatId());
+    assertEquals(URI.create("https://api.telegram.org/bot123:ABC/sendMessage"), client.endpoint());
+  }
+
+  @Test
+  void telegramFromProperties() {
+    final var properties = new Properties();
+    properties.setProperty("provider", "Telegram");
+    properties.setProperty("endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    properties.setProperty("chatId", "@channel");
+    final var client = IncidentClients.createClient(properties);
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    assertEquals("@channel", assertInstanceOf(TelegramTextFormat.class, webhookClient.format()).chatId());
+  }
+
+  @Test
+  void telegramMissingChatIdFails() {
+    final var properties = new Properties();
+    properties.setProperty("provider", "telegram");
+    properties.setProperty("endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    final var ex = assertThrows(IllegalStateException.class,
+        () -> IncidentClients.createClient(properties));
+    assertEquals("WebhookConfig chatId is required for the telegram provider.", ex.getMessage());
+  }
+
+  @Test
+  void telegramBlankChatIdFails() {
+    final var properties = new Properties();
+    properties.setProperty("provider", "telegram");
+    properties.setProperty("endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    properties.setProperty("chatId", " ");
+    final var ex = assertThrows(IllegalStateException.class,
+        () -> IncidentClients.createClient(properties));
+    // the factory's config-flavored message, not TelegramTextFormat's own validation
+    assertEquals("WebhookConfig chatId is required for the telegram provider.", ex.getMessage());
+  }
+
+  @Test
   void missingEndpointFails() {
     final var properties = new Properties();
     properties.setProperty("provider", "webhook");

@@ -11,15 +11,18 @@ import java.util.Objects;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
-/// Jazzer entry point for the [WebhookFormats] renderers. Alert fields are arbitrary
-/// caller-supplied strings, so both rendered documents must always be valid JSON: no raw
-/// control character may survive escaping, parsing the generic body back must yield
-/// exactly the values given to the builder (blank optionals omitted by contract), and the
-/// Slack text must carry every field through the documented entity transform
-/// (`&`/`<`/`>` → `&amp;`/`&lt;`/`&gt;`), which is inverted and checked for containment.
+/// Jazzer entry point for the [WebhookFormats] and [TelegramTextFormat] renderers. Alert
+/// fields are arbitrary caller-supplied strings, so every rendered document must always
+/// be valid JSON: no raw control character may survive escaping, parsing the generic
+/// body back must yield exactly the values given to the builder (blank optionals omitted
+/// by contract), and the Slack text must carry every field through the documented entity
+/// transform (`&`/`<`/`>` → `&amp;`/`&lt;`/`&gt;`), which is inverted and checked for
+/// containment. Slack and Telegram share one plain-text renderer, so the differential is
+/// exact: the entity-unescaped Slack text must equal the Telegram text (inputs here stay
+/// under the Telegram truncation limit), and the Telegram chat id must round-trip.
 ///
 /// The first byte selects the severity; the remainder is split on NUL bytes into
-/// summary, key, details, source, and one custom-detail entry.
+/// summary, key, details, source, one custom-detail entry, and the Telegram chat id.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///
@@ -154,6 +157,27 @@ public final class WebhookFormatFuzz {
     if (customKey != null) {
       assertContains(unescaped, customKey + ": " + customValue, "customDetails");
     }
+
+    // maxLen bounds the plain text well under MAX_TEXT_LENGTH, so no truncation: the
+    // entity-unescaped slack text and the telegram text must be identical
+    final var chatId = parts.length > 6 && !parts[6].isBlank() ? parts[6] : "chat-1";
+    final var telegramJson = new TelegramTextFormat(chatId).render(alert);
+    assertNoRawControlChars(telegramJson);
+    final var telegram = new Object() {
+      String chatId, text;
+    };
+    JsonIterator.parse(telegramJson).testObject((buf, offset, len, ji) -> {
+      if (fieldEquals("chat_id", buf, offset, len)) {
+        telegram.chatId = ji.readString();
+      } else if (fieldEquals("text", buf, offset, len)) {
+        telegram.text = ji.readString();
+      } else {
+        throw new AssertionError("unexpected field " + new String(buf, offset, len));
+      }
+      return true;
+    });
+    assertEq(chatId, telegram.chatId, "chat_id");
+    assertEq(unescaped, telegram.text, "telegram text vs unescaped slack text");
   }
 
   private static String part(final String[] parts, final int i) {

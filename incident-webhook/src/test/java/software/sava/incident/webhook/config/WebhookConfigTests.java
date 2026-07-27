@@ -21,11 +21,13 @@ final class WebhookConfigTests {
     properties.setProperty("incident.bearerToken", "token-1");
     properties.setProperty("incident.headers.X-Two", "two");
     properties.setProperty("incident.headers.X-One", "one");
+    properties.setProperty("incident.chatId", "-100123");
     final var config = WebhookConfig.parseConfig(properties, "incident");
 
     assertEquals(URI.create("https://hooks.example.com/notify"), config.endpoint());
     assertEquals(Duration.ofSeconds(13), config.requestTimeout());
     assertEquals("token-1", config.bearerToken());
+    assertEquals("-100123", config.chatId());
     // properties headers are sorted by name for a deterministic order
     assertEquals(List.of("X-One", "X-Two"), List.copyOf(config.headers().keySet()));
     assertEquals(Map.of("X-One", "one", "X-Two", "two"), config.headers());
@@ -38,6 +40,7 @@ final class WebhookConfigTests {
     final var config = WebhookConfig.parseConfig(properties, "incident.");
     assertEquals(URI.create("https://hooks.example.com/notify"), config.endpoint());
     assertNull(config.bearerToken());
+    assertNull(config.chatId());
     assertEquals(Map.of(), config.headers());
   }
 
@@ -45,10 +48,11 @@ final class WebhookConfigTests {
   void parseFromJsonPreservesHeaderOrder() {
     final var config = WebhookConfig.parseConfig(JsonIterator.parse("""
         {"endpoint":"https://hooks.example.com/notify","requestTimeout":"PT5S",
-        "bearerToken":"token-2","headers":{"Z-First":"z","A-Second":"a"}}"""));
+        "bearerToken":"token-2","chatId":"@channel","headers":{"Z-First":"z","A-Second":"a"}}"""));
     assertEquals(URI.create("https://hooks.example.com/notify"), config.endpoint());
     assertEquals(Duration.ofSeconds(5), config.requestTimeout());
     assertEquals("token-2", config.bearerToken());
+    assertEquals("@channel", config.chatId());
     assertEquals(List.of("Z-First", "A-Second"), List.copyOf(config.headers().keySet()));
     assertEquals(Map.of("Z-First", "z", "A-Second", "a"), config.headers());
   }

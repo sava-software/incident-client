@@ -98,13 +98,22 @@ public enum WebhookFormats implements WebhookFormat {
   }
 
   static String renderSlackText(final IncidentAlert alert) {
-    return "{\"text\":\"" + escapeJson(renderText(alert)) + "\"}";
+    return "{\"text\":\"" + escapeJson(slackText(alert)) + "\"}";
   }
 
-  /// The plain-text rendering inside [#SLACK_TEXT], package-private for direct tests.
-  /// Slack's text contract requires `&`, `<`, and `>` escaped as HTML entities; the
-  /// transform is applied to the assembled text, labels included, so no raw form survives.
-  static String renderText(final IncidentAlert alert) {
+  /// The text inside [#SLACK_TEXT], package-private for direct tests. Slack's text
+  /// contract requires `&`, `<`, and `>` escaped as HTML entities; the transform is
+  /// applied to the assembled text, labels included, so no raw form survives.
+  static String slackText(final IncidentAlert alert) {
+    return renderPlainText(alert)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;");
+  }
+
+  /// The shared plain multi-line rendering of an alert, free of any product markup;
+  /// formats whose product requires escaping (Slack entities) layer it on top.
+  static String renderPlainText(final IncidentAlert alert) {
     final var text = new StringBuilder(1_024);
     text.append('[').append(alert.severity()).append("] ").append(alert.summary());
     final var details = alert.details();
@@ -129,9 +138,6 @@ public enum WebhookFormats implements WebhookFormat {
         text.append('\n').append(entry.getKey()).append(": ").append(entry.getValue());
       }
     }
-    return text.toString()
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;");
+    return text.toString();
   }
 }

@@ -122,8 +122,10 @@ final class WebhookFormatsTests {
         .details("x > y & z")
         .severity(IncidentSeverity.ERROR)
         .create();
+    assertEquals("[ERROR] a & b <tag> c\nx > y & z",
+        WebhookFormats.renderPlainText(alert));
     assertEquals("[ERROR] a &amp; b &lt;tag&gt; c\nx &gt; y &amp; z",
-        WebhookFormats.renderText(alert));
+        WebhookFormats.slackText(alert));
     assertEquals("""
             {"text":"[ERROR] a &amp; b &lt;tag&gt; c\\nx &gt; y &amp; z"}""",
         WebhookFormats.SLACK_TEXT.render(alert)
@@ -174,7 +176,7 @@ final class WebhookFormatsTests {
             {"summary":"summary-1","severity":"INFO"}""",
         WebhookFormats.GENERIC_JSON.render(alert)
     );
-    assertEquals("[INFO] summary-1", WebhookFormats.renderText(alert));
+    assertEquals("[INFO] summary-1", WebhookFormats.renderPlainText(alert));
   }
 
   @Test
@@ -186,6 +188,6 @@ final class WebhookFormatsTests {
         .severity(IncidentSeverity.WARNING)
         .source(" ")
         .create();
-    assertEquals("[WARNING] summary-1", WebhookFormats.renderText(alert));
+    assertEquals("[WARNING] summary-1", WebhookFormats.renderPlainText(alert));
   }
 }

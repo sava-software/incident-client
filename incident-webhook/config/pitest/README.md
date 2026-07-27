@@ -42,14 +42,22 @@ refactored away, or moved below with a reason.
   accessor/null-body tests, or removed by refactor (the `body.length == 0`
   arms in the empty-body reads — `new String(byte[0])` is already `""`, so the
   length check was a content-equal branch); 3 accepted below (plus 1 in
-  `config`). `format` is clean.
+  `config`). The Telegram expansion (2026-07-26) added one accepted `format`
+  row (truncation boundary) and killed its factory's blank-chat-id direction
+  by pinning the factory's error message against the record's own validation.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
 Group by the principle that makes them equivalent (see the recurring families
 in HARDENING.md); the baseline CSVs carry the exact keys.
 
-- `# always-true-delegate` (config: `WebhookConfig$Parser.test:134`) —
+- `# boundary-identity` (format: `TelegramTextFormat.render:36`) — the
+  `text.length() > MAX_TEXT_LENGTH` truncation guard: the `>=` boundary mutant
+  differs only for text of exactly the limit length, where
+  `substring(0, MAX_TEXT_LENGTH)` returns identical content — both branches
+  produce the same string, so no input can distinguish them. The at-limit and
+  over-limit behaviours are pinned by exact-output tests.
+- `# always-true-delegate` (config: `WebhookConfig$Parser.test:150`) —
   `return super.test(...)` where the superclass either returns true or throws
   on unknown fields; the mutated constant-true return preserves the call and
   its side effects, so no input can distinguish it. Escape hatch: a superclass

@@ -17,6 +17,8 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// Configuration for a [WebhookClient]. `endpoint` is required — it is the user's own
 /// webhook URL and there is no meaningful default. `requestTimeout`, static `headers`,
 /// and a `bearerToken` convenience (an `Authorization: Bearer ...` header) are optional.
+/// `chatId` is the destination for chat-targeted providers (required by `telegram`,
+/// unused otherwise).
 ///
 /// Properties headers are keyed under `headers.`, JSON headers as an object:
 ///
@@ -32,14 +34,17 @@ public final class WebhookConfig extends HttpApiClientConfig {
 
   private final String bearerToken;
   private final Map<String, String> headers;
+  private final String chatId;
 
   private WebhookConfig(final URI endpoint,
                         final Duration requestTimeout,
                         final String bearerToken,
-                        final Map<String, String> headers) {
+                        final Map<String, String> headers,
+                        final String chatId) {
     super(endpoint, requestTimeout);
     this.bearerToken = bearerToken;
     this.headers = headers;
+    this.chatId = chatId;
   }
 
   public WebhookClient.Builder createClientBuilder() {
@@ -84,10 +89,17 @@ public final class WebhookConfig extends HttpApiClientConfig {
     return headers;
   }
 
+  /// Destination chat for chat-targeted providers, e.g. a Telegram numeric chat id or
+  /// `@channelusername`; null when not configured.
+  public String chatId() {
+    return chatId;
+  }
+
   private static final class Parser extends HttpApiClientConfig.Parser {
 
     private String bearerToken;
     private final Map<String, String> headers;
+    private String chatId;
 
     private Parser(final String prefix) {
       super(prefix);
@@ -104,7 +116,8 @@ public final class WebhookConfig extends HttpApiClientConfig {
           bearerToken,
           // header order is contractual (JSON document order) and Map.copyOf would
           // shuffle it, so every size takes the order-preserving copy
-          Collections.unmodifiableMap(new LinkedHashMap<>(headers))
+          Collections.unmodifiableMap(new LinkedHashMap<>(headers)),
+          chatId
       );
     }
 
@@ -112,6 +125,7 @@ public final class WebhookConfig extends HttpApiClientConfig {
     protected void parseConfig(final Properties properties) {
       super.parseConfig(properties);
       this.bearerToken = properties.getProperty(prefix + "bearerToken");
+      this.chatId = properties.getProperty(prefix + "chatId");
       final var headerPrefix = prefix + "headers.";
       // sorted for a deterministic header order; Properties iteration order is not stable
       for (final var name : new TreeSet<>(properties.stringPropertyNames())) {
@@ -128,6 +142,8 @@ public final class WebhookConfig extends HttpApiClientConfig {
     public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
       if (fieldEquals("bearerToken", buf, offset, len)) {
         this.bearerToken = ji.readString();
+      } else if (fieldEquals("chatId", buf, offset, len)) {
+        this.chatId = ji.readString();
       } else if (fieldEquals("headers", buf, offset, len)) {
         ji.readMap(headers, String::new, (header, headerJi) -> headerJi.readString());
       } else {

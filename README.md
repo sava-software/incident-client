@@ -8,7 +8,7 @@ Implementation of incident clients for various notification systems.
 |---------------------------------------------------------|----------------------|------------------------------------|
 | [PagerDuty V2 Events API](incident-pagerduty/README.md) | `incident-pagerduty` | `software.sava.incident_pagerduty` |
 | [incident.io Incidents V2](incident-io/README.md)       | `incident-io`        | `software.sava.incident_io`        |
-| [Generic Webhook / Slack](incident-webhook/README.md)   | `incident-webhook`   | `software.sava.incident_webhook`   |
+| [Generic Webhook / Slack / Telegram](incident-webhook/README.md) | `incident-webhook` | `software.sava.incident_webhook`  |
 
 All depend on `incident-core` (`software.sava.incident_core`), which provides the
 provider-neutral [`IncidentClient`](incident-core/src/main/java/software/sava/incident/core/api/IncidentClient.java)
@@ -99,7 +99,7 @@ try (final var httpClient = HttpClient.newHttpClient()) {
 }
 ```
 
-### Generic Webhook / Slack
+### Generic Webhook / Slack / Telegram
 
 [Full example](incident-examples/src/main/java/software/sava/incident/examples/WebhookExamples.java)
 
@@ -107,7 +107,9 @@ try (final var httpClient = HttpClient.newHttpClient()) {
 fire-and-forget notification, not incident management. `WebhookFormats.GENERIC_JSON`
 (provider id `webhook`) sends a canonical JSON document of the alert for receivers that
 do their own mapping; `WebhookFormats.SLACK_TEXT` (provider id `slack`) sends a plain
-`{"text":"..."}` Slack incoming-webhook message.
+`{"text":"..."}` Slack incoming-webhook message; `TelegramTextFormat` (provider id
+`telegram`) sends a Bot API `sendMessage` body to
+`https://api.telegram.org/bot<TOKEN>/sendMessage` with a configured `chatId`.
 
 ```java
 final var client = WebhookClient.clientBuilder()

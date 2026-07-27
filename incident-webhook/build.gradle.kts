@@ -16,7 +16,8 @@ hardening {
   mutation.register("format") {
     targetClasses = listOf(
       "software.sava.incident.webhook.WebhookFormats",
-      "software.sava.incident.webhook.WebhookFormats\$*"
+      "software.sava.incident.webhook.WebhookFormats\$*",
+      "software.sava.incident.webhook.TelegramTextFormat"
     )
     targetTests = "software.sava.incident.webhook.*Test*"
   }
@@ -34,6 +35,7 @@ hardening {
       "software.sava.incident.webhook.BaseWebhookIncidentClientFactory",
       "software.sava.incident.webhook.WebhookIncidentClientFactory",
       "software.sava.incident.webhook.SlackWebhookIncidentClientFactory",
+      "software.sava.incident.webhook.TelegramWebhookIncidentClientFactory",
       "software.sava.incident.webhook.exceptions.*"
     )
     excludedClasses = listOf("*Test*")

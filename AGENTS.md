@@ -24,8 +24,10 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   `/v2/change/enqueue`): trigger/acknowledge/resolve alert events and change events.
 - `incident-webhook/` — generic webhook POSTer: one shared transport/config/exception
   stack; per-product variance is isolated in `WebhookFormat` (built-ins:
-  `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`). Notification
-  only — no incident lifecycle, `supportsResolve()` is false.
+  `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`, and the
+  stateful `TelegramTextFormat` under `telegram` — chat id from config, Bot API
+  `sendMessage` endpoint). Notification only — no incident lifecycle,
+  `supportsResolve()` is false.
 - `incident-examples/` — runnable usage examples; not published.
 
 ### Provider-neutral API (`software.sava.incident.core.api`)

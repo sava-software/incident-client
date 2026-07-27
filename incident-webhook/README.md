@@ -28,7 +28,16 @@ variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON bo
   attachments; a workspace that needs rich formatting deserves a real Slack client. Slack
   workflow webhooks that accept arbitrary JSON can also consume `GENERIC_JSON`.
 
-Supporting another product (Telegram, Discord, ...) is one `WebhookFormat`
+- `TelegramTextFormat` (provider id `telegram`) — a Telegram Bot API `sendMessage` body,
+  `{"chat_id":"...","text":"..."}`, sharing the Slack format's plain-text rendering
+  (minus the entity escaping — no `parse_mode` is sent, so no Telegram markup escaping
+  applies). The endpoint is the bot's full `sendMessage` URL,
+  `https://api.telegram.org/bot<TOKEN>/sendMessage` — the URL carries the credential,
+  exactly like a Slack webhook — and `chatId` (a numeric chat id or `@channelusername`)
+  is required configuration. Text over 4096 characters is truncated client-side, since
+  `sendMessage` rejects longer messages outright.
+
+Supporting another product (Discord, Google Chat, ...) is one `WebhookFormat`
 implementation plus a factory registration.
 
 ## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/WebhookExamples.java)
@@ -84,6 +93,12 @@ incident.provider=webhook
 incident.endpoint=https://hooks.example.com/notify
 incident.headers.X-Api-Key=KEY
 incident.requestTimeout=5S
+```
+
+```properties
+incident.provider=telegram
+incident.endpoint=https://api.telegram.org/bot<TOKEN>/sendMessage
+incident.chatId=-1001234567890
 ```
 
 ```json

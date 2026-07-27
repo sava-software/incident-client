@@ -12,12 +12,15 @@ import java.util.Properties;
 abstract class BaseWebhookIncidentClientFactory implements IncidentClientFactory {
 
   private final String provider;
-  private final WebhookFormat format;
 
-  BaseWebhookIncidentClientFactory(final String provider, final WebhookFormat format) {
+  BaseWebhookIncidentClientFactory(final String provider) {
     this.provider = provider;
-    this.format = format;
   }
+
+  /// The [WebhookFormat] paired with the created client. Stateless providers ignore
+  /// `config`; config-dependent formats (Telegram's chat id) read their state from it and
+  /// throw an IllegalStateException when it is missing.
+  abstract WebhookFormat format(final WebhookConfig config);
 
   @Override
   public final String provider() {
@@ -35,6 +38,6 @@ abstract class BaseWebhookIncidentClientFactory implements IncidentClientFactory
   }
 
   private IncidentClient createClient(final WebhookConfig config) {
-    return config.createClientBuilder().createClient().incidentClient(format);
+    return config.createClientBuilder().createClient().incidentClient(format(config));
   }
 }
