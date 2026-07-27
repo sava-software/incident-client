@@ -160,8 +160,10 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     final var json = String.format("""
             {"event_action":"trigger","routing_key":"%s","dedup_key":"%s","payload":%s%s%s%s%s}""",
         escapeJson(routingKey), escapeJson(payload.dedupKey()), payloadJson,
-        (clientName == null || clientName.isBlank() ? "" : ",\"client\":\"" + escapeJson(clientName) + '"'),
-        (clientUrl == null || clientUrl.isBlank() ? "" : ",\"client_url\":\"" + escapeJson(clientUrl) + '"'),
+        (clientName == null || clientName.isBlank() ? "" : String.format("""
+            ,"client":"%s\"""", escapeJson(clientName))),
+        (clientUrl == null || clientUrl.isBlank() ? "" : String.format("""
+            ,"client_url":"%s\"""", escapeJson(clientUrl))),
         imagesJson, linksJson
     );
     return postEvent(eventUri, json);

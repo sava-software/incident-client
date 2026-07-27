@@ -36,6 +36,8 @@ public record TelegramTextFormat(String chatId) implements WebhookFormat {
     if (text.length() > MAX_TEXT_LENGTH) {
       text = text.substring(0, MAX_TEXT_LENGTH);
     }
-    return "{\"chat_id\":\"" + escapeJson(chatId) + "\",\"text\":\"" + escapeJson(text) + "\"}";
+    return String.format("""
+        {"chat_id":"%s","text":"%s"}""", escapeJson(chatId), escapeJson(text)
+    );
   }
 }

@@ -226,11 +226,8 @@ record PagerDutyChangeEventPayloadRecord(String summary,
 
     static void appendString(final StringBuilder jsonBuilder, final String field, final String str) {
       if (str != null && !str.isBlank()) {
-        jsonBuilder.append(",\"");
-        jsonBuilder.append(field);
-        jsonBuilder.append("\":\"");
-        jsonBuilder.append(escapeJsonRemoveNewLines(str));
-        jsonBuilder.append('"');
+        jsonBuilder.append(String.format("""
+            ,"%s":"%s\"""", field, escapeJsonRemoveNewLines(str)));
       }
     }
 

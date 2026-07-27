@@ -42,7 +42,8 @@ public final class EventClientTests implements EventClientTest {
 
           final var body = new String(httpExchange.getRequestBody().readAllBytes());
 
-          if (body.startsWith("{\"event_action\":\"trigger")) {
+          if (body.startsWith("""
+              {"event_action":"trigger""")) {
             final var expected = String.format("""
                     {
                     "event_action":"trigger",
@@ -57,13 +58,15 @@ public final class EventClientTests implements EventClientTest {
             );
             assertEquals(expected, body);
             writeResponse(httpExchange, response);
-          } else if (body.endsWith("acknowledge\"}")) {
+          } else if (body.endsWith("""
+              acknowledge"}""")) {
             final var expected = String.format("""
                 {"routing_key":"%s","dedup_key":"%s","event_action":"acknowledge"}""", routingKey, dedupKey
             );
             assertEquals(expected, body);
             writeResponse(httpExchange, response);
-          } else if (body.endsWith("resolve\"}")) {
+          } else if (body.endsWith("""
+              resolve"}""")) {
             final var expected = String.format("""
                 {"routing_key":"%s","dedup_key":"%s","event_action":"resolve"}""", routingKey, dedupKey
             );

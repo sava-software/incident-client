@@ -69,7 +69,8 @@ public final class PagerDutyPayloadFuzz {
     }
     final var payload = builder.create();
 
-    final var eventJson = "{\"routing_key\":\"rk\",\"payload\":"
+    final var eventJson = """
+        {"routing_key":"rk","payload":"""
         + payload.payloadJson() + payload.linksJson() + payload.imagesJson() + '}';
     assertNoRawControlChars(eventJson);
 
@@ -100,7 +101,8 @@ public final class PagerDutyPayloadFuzz {
 
     // the change-event payload serializes through a separate code path
     final var changePayload = PagerDutyChangeEventPayload.build(payload).create();
-    final var changeJson = "{\"routing_key\":\"rk\",\"payload\":"
+    final var changeJson = """
+        {"routing_key":"rk","payload":"""
         + changePayload.payloadJson() + changePayload.linksJson() + changePayload.imagesJson() + '}';
     assertNoRawControlChars(changeJson);
 

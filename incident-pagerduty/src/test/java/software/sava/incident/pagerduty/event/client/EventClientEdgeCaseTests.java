@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /// of the optional `client` / `client_url` trigger fields.
 public final class EventClientEdgeCaseTests implements EventClientTest {
 
-  private static final String PAYLOAD_JSON =
-      "{\"summary\":\"edge-summary\",\"source\":\"edge-source\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04Z\"}";
+  private static final String PAYLOAD_JSON = """
+      {"summary":"edge-summary","source":"edge-source","severity":"info","timestamp":"2018-08-01T02:03:04Z"}""";
 
   private void writeStatus(final HttpExchange httpExchange, final int statusCode, final String body) {
     final var bytes = body.getBytes(UTF_8);
@@ -43,25 +43,29 @@ public final class EventClientEdgeCaseTests implements EventClientTest {
     final var routingKey = "routing-key-" + port;
     server.accept("/v2/enqueue", httpExchange -> {
       final var body = new String(httpExchange.getRequestBody().readAllBytes(), UTF_8);
-      if (body.contains("\"dedup_key\":\"edge-300\"")) {
+      if (body.contains("""
+          "dedup_key":"edge-300\"""")) {
         // just below the 5xx band and outside 2xx: must route through the error path
         writeStatus(httpExchange, 300, """
             {"status":"redirected","message":"Multiple Choices"}""");
-      } else if (body.contains("\"dedup_key\":\"edge-url\"")) {
+      } else if (body.contains("""
+          "dedup_key":"edge-url\"""")) {
         // blank client name is omitted; the client_url still serializes
         assertEquals(String.format("""
                 {"event_action":"trigger","routing_key":"%s","dedup_key":"edge-url","payload":%s,"client_url":"https://client.example"}""",
             routingKey, PAYLOAD_JSON), body);
         writeStatus(httpExchange, 200, """
             {"status":"success","message":"Event processed","dedup_key":"edge-url"}""");
-      } else if (body.contains("\"dedup_key\":\"edge-name\"")) {
+      } else if (body.contains("""
+          "dedup_key":"edge-name\"""")) {
         // blank client_url is omitted; the client name still serializes
         assertEquals(String.format("""
                 {"event_action":"trigger","routing_key":"%s","dedup_key":"edge-name","payload":%s,"client":"edge-client-name"}""",
             routingKey, PAYLOAD_JSON), body);
         writeStatus(httpExchange, 200, """
             {"status":"success","message":"Event processed","dedup_key":"edge-name"}""");
-      } else if (body.contains("\"dedup_key\":\"edge-none\"")) {
+      } else if (body.contains("""
+          "dedup_key":"edge-none\"""")) {
         // null client name and url are both omitted
         assertEquals(String.format("""
                 {"event_action":"trigger","routing_key":"%s","dedup_key":"edge-none","payload":%s}""",

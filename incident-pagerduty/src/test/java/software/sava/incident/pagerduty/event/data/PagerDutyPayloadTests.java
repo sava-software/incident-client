@@ -29,10 +29,8 @@ final class PagerDutyPayloadTests {
         .customDetails("num", 5)
         .customDetails("flag", Boolean.TRUE)
         .create();
-    assertEquals(
-        "{\"summary\":\"sum\\\"maryline\",\"source\":\"so\\\\urce\",\"severity\":\"critical\""
-            + ",\"timestamp\":\"2018-08-01T02:03:04Z\",\"component\":\"com\\\"p\",\"group\":\"gr\\tp\""
-            + ",\"class\":\"cl\\\"ass\",\"custom_details\":{\"key\\\"1\":\"val\\n1\",\"num\":5,\"flag\":true}}",
+    assertEquals("""
+            {"summary":"sum\\"maryline","source":"so\\\\urce","severity":"critical","timestamp":"2018-08-01T02:03:04Z","component":"com\\"p","group":"gr\\tp","class":"cl\\"ass","custom_details":{"key\\"1":"val\\n1","num":5,"flag":true}}""",
         payload.payloadJson()
     );
   }
@@ -45,9 +43,8 @@ final class PagerDutyPayloadTests {
         .timestamp(TIMESTAMP)
         .customDetails("k", "v\"")
         .create();
-    assertEquals(
-        "{\"summary\":\"change\\\"s\",\"source\":\"srcline\""
-            + ",\"timestamp\":\"2018-08-01T02:03:04Z\",\"custom_details\":{\"k\":\"v\\\"\"}}",
+    assertEquals("""
+            {"summary":"change\\"s","source":"srcline","timestamp":"2018-08-01T02:03:04Z","custom_details":{"k":"v\\""}}""",
         payload.payloadJson()
     );
   }
@@ -58,22 +55,34 @@ final class PagerDutyPayloadTests {
         .href("https://ex.com/a?b=\"c\"")
         .text("te\nxt")
         .create();
-    assertEquals("{\"href\":\"https://ex.com/a?b=\\\"c\\\"\",\"text\":\"text\"}", link.toJson());
+    assertEquals("""
+        {"href":"https://ex.com/a?b=\\"c\\"","text":"text"}""", link.toJson()
+    );
 
     final var hrefOnly = PagerDutyLinkRef.build().href("h").text(" ").create();
-    assertEquals("{\"href\":\"h\"}", hrefOnly.toJson());
+    assertEquals("""
+        {"href":"h"}""", hrefOnly.toJson()
+    );
   }
 
   @Test
   void imageToJson() {
-    assertEquals("{\"src\":\"s\\\"1\"}",
-        PagerDutyImageRef.build().src("s\"1").create().toJson());
-    assertEquals("{\"src\":\"s\",\"alt\":\"a\\\"\"}",
-        PagerDutyImageRef.build().src("s").alt("a\"").create().toJson());
-    assertEquals("{\"src\":\"s\",\"href\":\"h\"}",
-        PagerDutyImageRef.build().src("s").href("h\n").create().toJson());
-    assertEquals("{\"src\":\"s\",\"href\":\"h\",\"alt\":\"a\"}",
-        PagerDutyImageRef.build().src("s").href("h").alt("a").create().toJson());
+    assertEquals("""
+            {"src":"s\\"1"}""",
+        PagerDutyImageRef.build().src("s\"1").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s","alt":"a\\""}""",
+        PagerDutyImageRef.build().src("s").alt("a\"").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s","href":"h"}""",
+        PagerDutyImageRef.build().src("s").href("h\n").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s","href":"h","alt":"a"}""",
+        PagerDutyImageRef.build().src("s").href("h").alt("a").create().toJson()
+    );
   }
 
   @Test
@@ -84,8 +93,8 @@ final class PagerDutyPayloadTests {
     details.put("int", new BigInteger("42"));
     details.put("bool", Boolean.FALSE);
     details.put("double", 1.5d);
-    assertEquals(
-        "{\"n\\\"ull\":null,\"dec\":\"1.10\",\"int\":\"42\",\"bool\":false,\"double\":1.5}",
+    assertEquals("""
+            {"n\\"ull":null,"dec":"1.10","int":"42","bool":false,"double":1.5}""",
         PagerDutyChangeEventPayloadRecord.PagerDutyChangeEventPayloadBuilder.toJson(details)
     );
   }
@@ -162,32 +171,41 @@ final class PagerDutyPayloadTests {
         .customDetails("obj", new StringBuilder("v\"1"))
         .customDetails("nil", (Object) null)
         .create();
-    assertEquals(
-        "{\"summary\":\"summary\",\"timestamp\":\"2018-08-01T02:03:04Z\""
-            + ",\"custom_details\":{\"obj\":\"v\\\"1\",\"nil\":\"null\"}}",
+    assertEquals("""
+            {"summary":"summary","timestamp":"2018-08-01T02:03:04Z","custom_details":{"obj":"v\\"1","nil":"null"}}""",
         payload.payloadJson()
     );
   }
 
   @Test
   void linkToJsonNullText() {
-    assertEquals("{\"href\":\"h\"}", PagerDutyLinkRef.build().href("h").create().toJson());
+    assertEquals("""
+        {"href":"h"}""", PagerDutyLinkRef.build().href("h").create().toJson()
+    );
   }
 
   @Test
   void imageToJsonBlankBranches() {
-    assertEquals("{\"src\":\"s\"}",
-        PagerDutyImageRef.build().src("s").href(" ").alt(" ").create().toJson());
-    assertEquals("{\"src\":\"s\",\"alt\":\"a\"}",
-        PagerDutyImageRef.build().src("s").href(" ").alt("a").create().toJson());
+    assertEquals("""
+            {"src":"s"}""",
+        PagerDutyImageRef.build().src("s").href(" ").alt(" ").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s","alt":"a"}""",
+        PagerDutyImageRef.build().src("s").href(" ").alt("a").create().toJson()
+    );
   }
 
   @Test
   void imageToJsonAltWithoutHref() {
-    assertEquals("{\"src\":\"s\",\"alt\":\"a\"}",
-        PagerDutyImageRef.build().src("s").alt("a").create().toJson());
-    assertEquals("{\"src\":\"s\"}",
-        PagerDutyImageRef.build().src("s").alt(" ").create().toJson());
+    assertEquals("""
+            {"src":"s","alt":"a"}""",
+        PagerDutyImageRef.build().src("s").alt("a").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s"}""",
+        PagerDutyImageRef.build().src("s").alt(" ").create().toJson()
+    );
   }
 
   @Test
@@ -211,7 +229,7 @@ final class PagerDutyPayloadTests {
         .summary("s")
         .timestamp(TIMESTAMP)
         .customDetails("b", Boolean.TRUE)
-        .customDetails("n", (Number) 42)
+        .customDetails("n", 42)
         .create();
     assertEquals(java.util.Map.of("b", (Object) Boolean.TRUE, "n", 42), payload.customDetails());
   }
@@ -225,10 +243,14 @@ final class PagerDutyPayloadTests {
 
   @Test
   void imageToJsonHrefWithoutAlt() {
-    assertEquals("{\"src\":\"s\",\"href\":\"h\"}",
-        PagerDutyImageRef.build().src("s").href("h").create().toJson());
-    assertEquals("{\"src\":\"s\",\"href\":\"h\"}",
-        PagerDutyImageRef.build().src("s").href("h").alt(" ").create().toJson());
+    assertEquals("""
+            {"src":"s","href":"h"}""",
+        PagerDutyImageRef.build().src("s").href("h").create().toJson()
+    );
+    assertEquals("""
+            {"src":"s","href":"h"}""",
+        PagerDutyImageRef.build().src("s").href("h").alt(" ").create().toJson()
+    );
   }
 
   @Test
@@ -276,8 +298,8 @@ final class PagerDutyPayloadTests {
         .group("")
         .eventClass("\t")
         .create();
-    assertEquals(
-        "{\"summary\":\"summary\",\"source\":\"source\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04Z\"}",
+    assertEquals("""
+            {"summary":"summary","source":"source","severity":"info","timestamp":"2018-08-01T02:03:04Z"}""",
         payload.payloadJson()
     );
   }
@@ -453,7 +475,8 @@ final class PagerDutyPayloadTests {
         .summary("summary")
         .timestamp(timestamp)
         .create();
-    assertEquals("{\"summary\":\"summary\",\"timestamp\":\"2018-08-01T02:03:04-04:00\"}", changePayload.payloadJson());
+    assertEquals("""
+        {"summary":"summary","timestamp":"2018-08-01T02:03:04-04:00"}""", changePayload.payloadJson());
 
     final var eventPayload = PagerDutyEventPayload.build()
         .dedupKey("dk-5")
@@ -462,8 +485,8 @@ final class PagerDutyPayloadTests {
         .severity(PagerDutySeverity.info)
         .timestamp(timestamp)
         .create();
-    assertEquals(
-        "{\"summary\":\"summary\",\"source\":\"source\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04-04:00\"}",
+    assertEquals("""
+            {"summary":"summary","source":"source","severity":"info","timestamp":"2018-08-01T02:03:04-04:00"}""",
         eventPayload.payloadJson()
     );
   }
@@ -474,7 +497,8 @@ final class PagerDutyPayloadTests {
         .summary("summary")
         .timestamp(TIMESTAMP)
         .create();
-    assertEquals("{\"summary\":\"summary\",\"timestamp\":\"2018-08-01T02:03:04Z\"}", payload.payloadJson());
+    assertEquals("""
+        {"summary":"summary","timestamp":"2018-08-01T02:03:04Z"}""", payload.payloadJson());
   }
 
   @Test
@@ -486,8 +510,8 @@ final class PagerDutyPayloadTests {
         .severity(PagerDutySeverity.info)
         .timestamp(TIMESTAMP)
         .create();
-    assertEquals(
-        "{\"summary\":\"summary\",\"source\":\"source\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04Z\"}",
+    assertEquals("""
+            {"summary":"summary","source":"source","severity":"info","timestamp":"2018-08-01T02:03:04Z"}""",
         payload.payloadJson()
     );
   }

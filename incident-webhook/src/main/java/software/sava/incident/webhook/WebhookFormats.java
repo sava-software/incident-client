@@ -55,7 +55,9 @@ public enum WebhookFormats implements WebhookFormat {
 
   private static void appendString(final StringBuilder json, final String field, final String str) {
     if (str != null && !str.isBlank()) {
-      json.append(",\"").append(field).append("\":\"").append(escapeJson(str)).append('"');
+      json.append(String.format("""
+          ,"%s":"%s\"""", field, escapeJson(str)
+      ));
     }
   }
 
@@ -73,7 +75,8 @@ public enum WebhookFormats implements WebhookFormat {
         case Object obj -> '"' + escapeJson(obj.toString()) + '"';
       };
       return String.format("""
-          "%s":%s""", escapeJson(entry.getKey()), rawVal);
+          "%s":%s""", escapeJson(entry.getKey()), rawVal
+      );
     }).collect(Collectors.joining(",", "{", "}"));
   }
 
@@ -87,18 +90,23 @@ public enum WebhookFormats implements WebhookFormat {
     appendString(json, "source", alert.source());
     final var timestamp = alert.timestamp();
     if (timestamp != null) {
-      json.append(",\"timestamp\":\"").append(Rfc3339.format(timestamp)).append('"');
+      json.append(String.format("""
+          ,"timestamp":"%s\"""", Rfc3339.format(timestamp)
+      ));
     }
     appendString(json, "details", alert.details());
     final var customDetails = alert.customDetails();
     if (customDetails != null && !customDetails.isEmpty()) {
-      json.append(",\"customDetails\":").append(toJson(customDetails));
+      json.append("""
+          ,"customDetails":""").append(toJson(customDetails));
     }
     return json.append('}').toString();
   }
 
   static String renderSlackText(final IncidentAlert alert) {
-    return "{\"text\":\"" + escapeJson(slackText(alert)) + "\"}";
+    return String.format("""
+        {"text":"%s"}""", escapeJson(slackText(alert))
+    );
   }
 
   /// The text inside [#SLACK_TEXT], package-private for direct tests. Slack's text

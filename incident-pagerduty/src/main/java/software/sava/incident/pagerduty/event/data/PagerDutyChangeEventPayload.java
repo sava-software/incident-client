@@ -32,13 +32,15 @@ public interface PagerDutyChangeEventPayload {
   default String linksJson() {
     final var links = links();
     return links.isEmpty() ? "" : links.stream().map(PagerDutyLinkRef::toJson)
-        .collect(Collectors.joining(",", ",\"links\":[", "]"));
+        .collect(Collectors.joining(",", """
+            ,"links":[""", "]"));
   }
 
   default String imagesJson() {
     final var images = images();
     return images.isEmpty() ? "" : images.stream().map(PagerDutyImageRef::toJson)
-        .collect(Collectors.joining(",", ",\"images\":[", "]"));
+        .collect(Collectors.joining(",", """
+            ,"images":[""", "]"));
   }
 
   String payloadJson();

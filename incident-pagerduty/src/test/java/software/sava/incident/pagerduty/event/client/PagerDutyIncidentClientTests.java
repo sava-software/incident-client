@@ -107,10 +107,8 @@ final class PagerDutyIncidentClientTests {
         .customDetail("k2", 2)
         .create());
     assertEquals("dedup-1", payload.dedupKey());
-    assertEquals(
-        "{\"summary\":\"summary-1\",\"source\":\"host-1\",\"severity\":\"warning\""
-            + ",\"timestamp\":\"2024-03-04T05:06:07Z\""
-            + ",\"custom_details\":{\"details\":\"details-1\",\"k1\":\"v1\",\"k2\":2}}",
+    assertEquals("""
+            {"summary":"summary-1","source":"host-1","severity":"warning","timestamp":"2024-03-04T05:06:07Z","custom_details":{"details":"details-1","k1":"v1","k2":2}}""",
         payload.payloadJson()
     );
   }
@@ -124,9 +122,8 @@ final class PagerDutyIncidentClientTests {
         .create());
     // no key -> generated dedup key; no source -> fallback; no details -> no custom_details
     assertEquals(36, payload.dedupKey().length());
-    assertEquals(
-        "{\"summary\":\"summary-2\",\"source\":\"unknown\",\"severity\":\"critical\""
-            + ",\"timestamp\":\"2024-03-04T05:06:07Z\"}",
+    assertEquals("""
+            {"summary":"summary-2","source":"unknown","severity":"critical","timestamp":"2024-03-04T05:06:07Z"}""",
         payload.payloadJson()
     );
   }
@@ -142,8 +139,8 @@ final class PagerDutyIncidentClientTests {
         .timestamp(TIMESTAMP)
         .create());
     // blank source falls back; blank details are omitted
-    assertEquals(
-        "{\"summary\":\"summary-b\",\"source\":\"unknown\",\"severity\":\"error\",\"timestamp\":\"2024-03-04T05:06:07Z\"}",
+    assertEquals("""
+            {"summary":"summary-b","source":"unknown","severity":"error","timestamp":"2024-03-04T05:06:07Z"}""",
         payload.payloadJson()
     );
   }
