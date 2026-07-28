@@ -135,20 +135,35 @@ final var response = incidentClient.reportIncident(IncidentAlert.build()
     .summary("Validator missed its leader slot")
     .details("No block produced for slot 350000000.")
     .severity(IncidentSeverity.CRITICAL)
+    .source("validator-07.example.com")
+    .customDetail("region", "us-east-1")
     .timestamp(ZonedDateTime.now())
     .create()).join();
 ```
 
 The alert's `summary` becomes the incident `name` and its `details` the incident
-`summary`.
+`summary`, with `source()` and `customDetails()` appended to that summary as text:
+
+```
+No block produced for slot 350000000.
+
+Source: validator-07.example.com
+region: us-east-1
+slot: 350000000
+```
+
+An incident.io custom field is a workspace schema object referenced by id — not an
+arbitrary key/value like PagerDuty's `custom_details` — so there is nowhere structured to
+put them without a per-key id mapping. Appending keeps them attached to the incident
+rather than dropping them. (Mapping detail keys onto real custom fields, so they become
+filterable in incident.io, is a possible future addition; it would need a configured
+`key -> custom field id` table, and only `text`, `link`, and `numeric` field types can
+take an arbitrary value — select and catalog fields want option ids.)
 
 `IncidentAlert#timestamp()` is sent as an `incident_timestamp_values` entry, but only
 when `incidentTimestampId` names the workspace's incident timestamp to set — incident.io
 has no id-free slot for it, and stamps its own `created_at` either way. Unset, or with a
-blank id, the alert timestamp is dropped. `IncidentAlert#customDetails()` and `source()`
-are likewise not sent: both would need a custom-field id mapping, and only `text`,
-`link`, and `numeric` fields could take an arbitrary value anyway — select and catalog
-fields need option ids, not values.
+blank id, the alert timestamp is dropped.
 
 incident.io incidents are resolved by status updates, which this client does not
 support: `supportsResolve()` returns `false` and `resolveIncident(String)` fails the

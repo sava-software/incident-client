@@ -176,6 +176,116 @@ final class IncidentIoIncidentClientTests {
     assertInstanceOf(UnsupportedOperationException.class, thrown.getCause());
   }
 
+  /// `source` and `customDetails` have no id-free incident.io equivalent, so they are
+  /// appended to the incident summary rather than dropped.
+  @Test
+  void sourceAndCustomDetailsAreAppendedToTheSummary() {
+    final var stub = new StubIoClient();
+    final var client = (IncidentIoIncidentClient) builder(stub).createClient();
+
+    final var request = client.toRequest(IncidentAlert.build()
+        .key("idem-1")
+        .summary("Validator missed its leader slot")
+        .details("No block produced for slot 350000000.")
+        .severity(IncidentSeverity.CRITICAL)
+        .source("validator-07.example.com")
+        .customDetail("region", "us-east-1")
+        .customDetail("slot", 350000000L)
+        .customDetail("missed", true)
+        .create());
+
+    assertEquals("""
+        No block produced for slot 350000000.
+
+        Source: validator-07.example.com
+        region: us-east-1
+        slot: 350000000
+        missed: true""", request.summary()
+    );
+    // insertion order is preserved, and the whole block is escaped as one JSON string
+    assertEquals("""
+        {"idempotency_key":"idem-1","name":"Validator missed its leader slot",\
+        "summary":"No block produced for slot 350000000.\\n\\nSource: validator-07.example.com\\n\
+        region: us-east-1\\nslot: 350000000\\nmissed: true",\
+        "incident_type_id":"type-1","mode":"standard","severity_id":"sev-critical",\
+        "incident_status_id":"status-1","visibility":"public"}""", request.body()
+    );
+  }
+
+  /// Each of the three inputs can be absent independently; none may introduce a stray
+  /// leading, trailing, or doubled newline.
+  @Test
+  void summaryAppendixHandlesEachPartBeingAbsent() {
+    final var stub = new StubIoClient();
+    final var client = (IncidentIoIncidentClient) builder(stub).createClient();
+
+    // source only
+    assertEquals("Source: host-1", client.toRequest(IncidentAlert.build()
+        .summary("title-1")
+        .severity(IncidentSeverity.CRITICAL)
+        .source("host-1")
+        .create()).summary());
+
+    // one custom detail only — no separator before the first line
+    assertEquals("region: us-east-1", client.toRequest(IncidentAlert.build()
+        .summary("title-2")
+        .severity(IncidentSeverity.CRITICAL)
+        .customDetail("region", "us-east-1")
+        .create()).summary());
+
+    // details only: unchanged, no trailing blank line
+    assertEquals("just details", client.toRequest(IncidentAlert.build()
+        .summary("title-3")
+        .details("just details")
+        .severity(IncidentSeverity.CRITICAL)
+        .create()).summary());
+
+    // a blank source is skipped, so the first custom detail leads
+    assertEquals("region: us-east-1", client.toRequest(IncidentAlert.build()
+        .summary("title-4")
+        .severity(IncidentSeverity.CRITICAL)
+        .source("  ")
+        .customDetail("region", "us-east-1")
+        .create()).summary());
+
+    // blank details are treated as absent: no leading empty line
+    assertEquals("Source: host-2", client.toRequest(IncidentAlert.build()
+        .summary("title-5")
+        .details("  ")
+        .severity(IncidentSeverity.CRITICAL)
+        .source("host-2")
+        .create()).summary());
+
+    // nothing at all: the summary stays absent and is omitted from the body
+    final var bare = client.toRequest(IncidentAlert.build()
+        .summary("title-6")
+        .severity(IncidentSeverity.CRITICAL)
+        .create());
+    assertNull(bare.summary());
+    assertFalse(bare.body().contains("\"summary\""), bare.body());
+  }
+
+  @Test
+  void customDetailValuesRenderIncludingNulls() {
+    final var stub = new StubIoClient();
+    final var client = (IncidentIoIncidentClient) builder(stub).createClient();
+
+    assertEquals("""
+        details
+
+        a: 1
+        b: null
+        c: text""", client.toRequest(IncidentAlert.build()
+        .summary("title-1")
+        .details("details")
+        .severity(IncidentSeverity.CRITICAL)
+        .customDetail("a", 1)
+        .customDetail("b", null)
+        .customDetail("c", "text")
+        .create()).summary()
+    );
+  }
+
   /// The alert timestamp needs a workspace-specific incident timestamp id to land on, so
   /// both halves have to be present — each missing half independently drops it.
   @Test
