@@ -1,5 +1,22 @@
 # Changelog
 
+## [25.4.0](https://github.com/sava-software/incident-client/compare/25.3.0...25.4.0) (2026-07-28)
+
+
+### Features
+
+* **incident-io:** add support for incident timestamp IDs in alerts ([1c993a7](https://github.com/sava-software/incident-client/commit/1c993a776898bdd09b8257e6c619c034218437e5))
+* **incident-io:** append source and custom details to incident summaries ([a565158](https://github.com/sava-software/incident-client/commit/a565158d932445d279c771e914342cb31e5b7af8))
+* **incident-io:** support postmortem document IDs and extend parsing ([c8d1dcc](https://github.com/sava-software/incident-client/commit/c8d1dcc816782298680d33a0be12b5eb7835bea0))
+* **incident-webhook:** add support for custom providers with tests ([00a96ee](https://github.com/sava-software/incident-client/commit/00a96eef9cd7617d092d3f5be9fc7dcc0d85920b))
+* **incident-webhook:** add Telegram provider support ([774df64](https://github.com/sava-software/incident-client/commit/774df645ac83bf4d40772521fef09150122b4ce2))
+* **incident-webhook:** add webhook client and factory with tests ([eb3ae81](https://github.com/sava-software/incident-client/commit/eb3ae81765d95e069b15c86368c75f4ec78975ca))
+
+
+### Miscellaneous Chores
+
+* release 25.4.0 ([9c685ba](https://github.com/sava-software/incident-client/commit/9c685ba334e5c6e16db3c53ddac778580675e3f6))
+
 ## [25.3.0](https://github.com/sava-software/incident-client/compare/25.2.0...25.3.0) (2026-07-26)
 
 
