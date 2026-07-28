@@ -172,7 +172,8 @@ final class IncidentIoConfigTests {
   void parseJsonIncidentClientMapping() {
     final var config = IncidentIoConfig.parseConfig(JsonIterator.parse("""
         {"bearerToken":"t","severityIds":{"CRITICAL":"sev-1","error":"sev-2"},
-        "incidentTypeId":"type-1","statusId":"status-1","visibility":"private","mode":"retrospective"}"""));
+        "incidentTypeId":"type-1","statusId":"status-1","visibility":"private","mode":"retrospective",
+        "incidentTimestampId":"ts-1"}"""));
     assertEquals(Map.of(
         IncidentSeverity.CRITICAL, "sev-1",
         IncidentSeverity.ERROR, "sev-2"
@@ -181,6 +182,7 @@ final class IncidentIoConfigTests {
     assertEquals("status-1", config.statusId());
     assertEquals(CreateIncidentRequest.Visibility.PRIVATE, config.visibility());
     assertEquals(CreateIncidentRequest.Mode.retrospective, config.mode());
+    assertEquals("ts-1", config.incidentTimestampId());
   }
 
   @Test
@@ -193,6 +195,7 @@ final class IncidentIoConfigTests {
     properties.setProperty("io.statusId", "status-1");
     properties.setProperty("io.visibility", "public");
     properties.setProperty("io.mode", "TEST");
+    properties.setProperty("io.incidentTimestampId", "ts-1");
     final var config = IncidentIoConfig.parseConfig(properties, "io");
     assertEquals(Map.of(
         IncidentSeverity.CRITICAL, "sev-1",
@@ -202,6 +205,7 @@ final class IncidentIoConfigTests {
     assertEquals("status-1", config.statusId());
     assertEquals(CreateIncidentRequest.Visibility.PUBLIC, config.visibility());
     assertEquals(CreateIncidentRequest.Mode.test, config.mode());
+    assertEquals("ts-1", config.incidentTimestampId());
   }
 
   @Test
@@ -241,14 +245,20 @@ final class IncidentIoConfigTests {
     assertNull(config.statusId());
     assertNull(config.visibility());
     assertNull(config.mode());
+    assertNull(config.incidentTimestampId());
   }
 
   @Test
   void createIncidentClientBuilderSeedsMapping() {
     final var config = IncidentIoConfig.parseConfig(JsonIterator.parse("""
-        {"bearerToken":"t","severityIds":{"CRITICAL":"sev-1"},"visibility":"private"}"""));
+        {"bearerToken":"t","severityIds":{"CRITICAL":"sev-1"},"visibility":"private",
+        "incidentTimestampId":"ts-1"}"""));
     final var client = config.createClientBuilder().createClient();
     assertNotNull(config.createIncidentClientBuilder(client).createClient());
+    assertEquals("ts-1", config.incidentTimestampId());
+    // that the seeded id reaches the serialized request is pinned by
+    // IncidentIoIncidentClientTests#configSeedsTheIncidentTimestampId, which lives in the
+    // adapter's package where toRequest is reachable
 
     // visibility is required by the adapter builder, not at config parse time
     final var noVisibility = IncidentIoConfig.parseConfig(JsonIterator.parse("""

@@ -183,6 +183,9 @@ if (incidentClient.supportsResolve()) {
 The incident.io adapter maps `IncidentSeverity` values onto workspace severity ids
 supplied at build time, and has no programmatic resolve: `supportsResolve()` returns
 `false` and `resolveIncident(String)` fails the returned future with an
-`UnsupportedOperationException`. Provider-specific features — PagerDuty links, images, and
-change events; incident.io custom fields and role assignments — remain on the provider
-clients.
+`UnsupportedOperationException`. It also needs an `incidentTimestampId` before it can
+send `IncidentAlert#timestamp()` — incident.io timestamps are workspace ids — and does
+not send `customDetails()` or `source()` at all, so it is the one adapter that does not
+carry every field of the neutral alert. Provider-specific features — PagerDuty links,
+images, and change events; incident.io custom fields and role assignments — remain on the
+provider clients.

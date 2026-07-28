@@ -19,8 +19,9 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 /// Configuration for the native [IncidentIoClient] plus the workspace-specific mapping the
 /// provider-neutral [IncidentIoIncidentClient] adapter needs: `severityIds` keyed by
-/// [IncidentSeverity] name, and default `incidentTypeId`, `statusId`, `visibility`, and
-/// `mode`. The mapping fields are optional at parse time; `visibility` is required to
+/// [IncidentSeverity] name, default `incidentTypeId`, `statusId`, `visibility`, and
+/// `mode`, and the `incidentTimestampId` the alert timestamp is written to. The mapping
+/// fields are optional at parse time; `visibility` is required to
 /// [#createIncidentClientBuilder(IncidentIoClient)]-create a neutral client.
 public final class IncidentIoConfig extends HttpApiClientConfig {
 
@@ -30,6 +31,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
   private final String statusId;
   private final CreateIncidentRequest.Visibility visibility;
   private final CreateIncidentRequest.Mode mode;
+  private final String incidentTimestampId;
 
   private IncidentIoConfig(final URI endpoint,
                            final Duration requestTimeout,
@@ -38,7 +40,8 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
                            final String incidentTypeId,
                            final String statusId,
                            final CreateIncidentRequest.Visibility visibility,
-                           final CreateIncidentRequest.Mode mode) {
+                           final CreateIncidentRequest.Mode mode,
+                           final String incidentTimestampId) {
     super(endpoint, requestTimeout);
     this.bearerToken = bearerToken;
     this.severityIds = severityIds;
@@ -46,6 +49,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     this.statusId = statusId;
     this.visibility = visibility;
     this.mode = mode;
+    this.incidentTimestampId = incidentTimestampId;
   }
 
   public IncidentIoClient.Builder createClientBuilder() {
@@ -64,14 +68,15 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
   }
 
   /// Starts a provider-neutral adapter builder over `client`, seeded with this config's
-  /// severity id mapping and default type/status/visibility/mode.
+  /// severity id mapping, default type/status/visibility/mode, and incident timestamp id.
   public IncidentIoIncidentClient.Builder createIncidentClientBuilder(final IncidentIoClient client) {
     return IncidentIoIncidentClient.build(client)
         .severityIds(severityIds)
         .incidentTypeId(incidentTypeId)
         .statusId(statusId)
         .visibility(visibility)
-        .mode(mode);
+        .mode(mode)
+        .incidentTimestampId(incidentTimestampId);
   }
 
   public static IncidentIoConfig parseConfig(final Properties properties) {
@@ -114,6 +119,11 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     return mode;
   }
 
+  /// Id of the incident timestamp the alert timestamp is written to; null when unset.
+  public String incidentTimestampId() {
+    return incidentTimestampId;
+  }
+
   private static final class Parser extends HttpApiClientConfig.Parser {
 
     /// Case-insensitive enum-value matcher that fails loudly: a config with an unknown
@@ -150,6 +160,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
     private String statusId;
     private CreateIncidentRequest.Visibility visibility;
     private CreateIncidentRequest.Mode mode;
+    private String incidentTimestampId;
 
     private Parser(final String prefix) {
       super(prefix);
@@ -168,7 +179,8 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
           incidentTypeId,
           statusId,
           visibility,
-          mode
+          mode,
+          incidentTimestampId
       );
     }
 
@@ -186,6 +198,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
       this.statusId = properties.getProperty(prefix + "statusId");
       this.visibility = parseEnum(VISIBILITY_PARSER, properties.getProperty(prefix + "visibility"));
       this.mode = parseEnum(MODE_PARSER, properties.getProperty(prefix + "mode"));
+      this.incidentTimestampId = properties.getProperty(prefix + "incidentTimestampId");
     }
 
     @Override
@@ -202,6 +215,8 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
         this.visibility = ji.applyChars(VISIBILITY_PARSER);
       } else if (fieldEquals("mode", buf, offset, len)) {
         this.mode = ji.applyChars(MODE_PARSER);
+      } else if (fieldEquals("incidentTimestampId", buf, offset, len)) {
+        this.incidentTimestampId = ji.readString();
       } else {
         return super.test(buf, offset, len, ji);
       }

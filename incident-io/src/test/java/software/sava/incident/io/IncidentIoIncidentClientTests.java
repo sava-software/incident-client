@@ -3,10 +3,15 @@ package software.sava.incident.io;
 import org.junit.jupiter.api.Test;
 import software.sava.incident.core.api.IncidentAlert;
 import software.sava.incident.core.api.IncidentSeverity;
+import software.sava.incident.io.config.IncidentIoConfig;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -169,6 +174,123 @@ final class IncidentIoIncidentClientTests {
     final var client = builder(new StubIoClient()).createClient();
     final var thrown = assertThrows(CompletionException.class, () -> client.resolveIncident("inc-1").join());
     assertInstanceOf(UnsupportedOperationException.class, thrown.getCause());
+  }
+
+  /// The alert timestamp needs a workspace-specific incident timestamp id to land on, so
+  /// both halves have to be present — each missing half independently drops it.
+  @Test
+  void alertTimestampNeedsBothAnIdAndATimestamp() {
+    final var stub = new StubIoClient();
+    final var timestamp = ZonedDateTime.parse("2024-05-01T12:00:00Z");
+
+    final var configured = (IncidentIoIncidentClient) builder(stub)
+        .incidentTimestampId("ts-1")
+        .createClient();
+    final var withBoth = configured.toRequest(IncidentAlert.build()
+        .key("idem-1")
+        .summary("title-1")
+        .severity(IncidentSeverity.CRITICAL)
+        .timestamp(timestamp)
+        .create());
+    assertEquals("""
+        {"idempotency_key":"idem-1","name":"title-1","incident_type_id":"type-1","mode":"standard",\
+        "severity_id":"sev-critical","incident_status_id":"status-1","visibility":"public",\
+        "incident_timestamp_values":[{"incident_timestamp_id":"ts-1","value":"2024-05-01T12:00:00Z"}]}""",
+        withBoth.body()
+    );
+
+    // id configured, alert carries no timestamp
+    final var noTimestamp = configured.toRequest(IncidentAlert.build()
+        .key("idem-2")
+        .summary("title-2")
+        .severity(IncidentSeverity.CRITICAL)
+        .create());
+    assertEquals(List.of(), List.copyOf(noTimestamp.incidentTimestampValues()));
+
+    // timestamp present, no id configured
+    final var unconfigured = (IncidentIoIncidentClient) builder(stub).createClient();
+    final var noId = unconfigured.toRequest(IncidentAlert.build()
+        .key("idem-3")
+        .summary("title-3")
+        .severity(IncidentSeverity.CRITICAL)
+        .timestamp(timestamp)
+        .create());
+    assertEquals(List.of(), List.copyOf(noId.incidentTimestampValues()));
+
+    // neither
+    final var neither = unconfigured.toRequest(IncidentAlert.build()
+        .key("idem-4")
+        .summary("title-4")
+        .severity(IncidentSeverity.CRITICAL)
+        .create());
+    assertEquals(List.of(), List.copyOf(neither.incidentTimestampValues()));
+  }
+
+  /// `incident_timestamp_id` is required by the payload, so it serializes even when
+  /// blank; the builder normalizes a blank id to unset so a misconfigured id drops the
+  /// timestamp instead of producing a request the API can only reject.
+  @Test
+  void blankIncidentTimestampIdIsTreatedAsUnset() {
+    final var stub = new StubIoClient();
+    final var alert = IncidentAlert.build()
+        .key("idem-1")
+        .summary("title-1")
+        .severity(IncidentSeverity.CRITICAL)
+        .timestamp(ZonedDateTime.parse("2024-05-01T12:00:00Z"))
+        .create();
+
+    for (final var blank : new String[]{"  ", "", null}) {
+      final var client = (IncidentIoIncidentClient) builder(stub)
+          .incidentTimestampId(blank)
+          .createClient();
+      assertEquals(List.of(), List.copyOf(client.toRequest(alert).incidentTimestampValues()),
+          "blank id '" + blank + "' should be treated as unset");
+    }
+
+    // and a set id is not normalized away
+    final var client = (IncidentIoIncidentClient) builder(stub)
+        .incidentTimestampId(" ts-1 ")
+        .createClient();
+    assertEquals(" ts-1 ",
+        List.copyOf(client.toRequest(alert).incidentTimestampValues()).getFirst().incidentTimestampId());
+  }
+
+  /// A region zone would render an invalid RFC 3339 `[Area/City]` suffix; the adapter
+  /// converts to an offset before it reaches the request.
+  @Test
+  void regionZonedTimestampSerializesAsAnOffset() {
+    final var stub = new StubIoClient();
+    final var client = (IncidentIoIncidentClient) builder(stub)
+        .incidentTimestampId("ts-1")
+        .createClient();
+
+    final var request = client.toRequest(IncidentAlert.build()
+        .key("idem-1")
+        .summary("title-1")
+        .severity(IncidentSeverity.CRITICAL)
+        .timestamp(ZonedDateTime.of(
+            LocalDateTime.parse("2024-05-01T12:00:00"), ZoneId.of("America/New_York")))
+        .create());
+    assertTrue(request.body().contains("""
+        "value":"2024-05-01T12:00:00-04:00\""""), request.body());
+    assertFalse(request.body().contains("America/New_York"), request.body());
+  }
+
+  @Test
+  void configSeedsTheIncidentTimestampId() {
+    final var stub = new StubIoClient();
+    final var config = IncidentIoConfig.parseConfig(JsonIterator.parse("""
+        {"bearerToken":"t","visibility":"private","incidentTimestampId":"ts-config"}"""));
+    final var client = (IncidentIoIncidentClient) config.createIncidentClientBuilder(stub).createClient();
+
+    final var request = client.toRequest(IncidentAlert.build()
+        .summary("title-1")
+        .severity(IncidentSeverity.CRITICAL)
+        .timestamp(ZonedDateTime.parse("2024-05-01T12:00:00Z"))
+        .create());
+    final var timestampValues = List.copyOf(request.incidentTimestampValues());
+    assertEquals(1, timestampValues.size());
+    assertEquals("ts-config", timestampValues.getFirst().incidentTimestampId());
   }
 
   @Test

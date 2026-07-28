@@ -99,14 +99,16 @@ final var client = config.createClientBuilder()
 ```
 
 The config also carries the workspace-specific mapping the provider-neutral adapter
-needs — `severityIds` keyed by `IncidentSeverity` name, and default `incidentTypeId`,
-`statusId`, `visibility`, and `mode`:
+needs — `severityIds` keyed by `IncidentSeverity` name, default `incidentTypeId`,
+`statusId`, `visibility`, and `mode`, and the `incidentTimestampId` the alert timestamp
+is written to:
 
 ```properties
 bearerToken=BEARER_TOKEN
 visibility=private
 severityIds.CRITICAL=SEVERITY_ID
 incidentTypeId=INCIDENT_TYPE_ID
+incidentTimestampId=INCIDENT_TIMESTAMP_ID
 ```
 
 ```java
@@ -126,17 +128,28 @@ final var incidentClient = client.incidentClientBuilder()
     .severityId(IncidentSeverity.CRITICAL, "SEVERITY_ID")
     .severityId(IncidentSeverity.WARNING, "SEVERITY_ID")
     .incidentTypeId("INCIDENT_TYPE_ID")
+    .incidentTimestampId("INCIDENT_TIMESTAMP_ID")
     .createClient();
 
 final var response = incidentClient.reportIncident(IncidentAlert.build()
     .summary("Validator missed its leader slot")
     .details("No block produced for slot 350000000.")
     .severity(IncidentSeverity.CRITICAL)
+    .timestamp(ZonedDateTime.now())
     .create()).join();
 ```
 
 The alert's `summary` becomes the incident `name` and its `details` the incident
-`summary`; `IncidentAlert#customDetails()` has no id-free incident.io equivalent and is
-not sent. incident.io incidents are resolved by status updates, which this client does not
+`summary`.
+
+`IncidentAlert#timestamp()` is sent as an `incident_timestamp_values` entry, but only
+when `incidentTimestampId` names the workspace's incident timestamp to set — incident.io
+has no id-free slot for it, and stamps its own `created_at` either way. Unset, or with a
+blank id, the alert timestamp is dropped. `IncidentAlert#customDetails()` and `source()`
+are likewise not sent: both would need a custom-field id mapping, and only `text`,
+`link`, and `numeric` fields could take an arbitrary value anyway — select and catalog
+fields need option ids, not values.
+
+incident.io incidents are resolved by status updates, which this client does not
 support: `supportsResolve()` returns `false` and `resolveIncident(String)` fails the
 returned future with an `UnsupportedOperationException`.
