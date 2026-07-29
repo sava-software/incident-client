@@ -75,9 +75,7 @@ public final class WebhookConfig extends HttpApiClientConfig {
   }
 
   public static WebhookConfig parseConfig(final JsonIterator ji) {
-    final var parser = parser();
-    ji.testObject(parser);
-    return parser.createConfig();
+    return ji.parseObject(parser(), Parser::createConfig);
   }
 
   public static Parser parser() {

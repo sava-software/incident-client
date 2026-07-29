@@ -53,9 +53,7 @@ public final class PagerDutyConfig extends HttpApiClientConfig {
   }
 
   public static PagerDutyConfig parseConfig(final JsonIterator ji) {
-    final var parser = new Parser(null);
-    ji.testObject(parser);
-    return parser.createConfig();
+    return ji.parseObject(new Parser(null), Parser::createConfig);
   }
 
   public String routingKey() {

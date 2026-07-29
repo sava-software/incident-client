@@ -90,9 +90,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
   }
 
   public static IncidentIoConfig parseConfig(final JsonIterator ji) {
-    final var parser = new Parser(null);
-    ji.testObject(parser);
-    return parser.createConfig();
+    return ji.parseObject(new Parser(null), Parser::createConfig);
   }
 
   public String bearerToken() {
@@ -206,7 +204,7 @@ public final class IncidentIoConfig extends HttpApiClientConfig {
       if (fieldEquals("bearerToken", buf, offset, len)) {
         this.bearerToken = ji.readString();
       } else if (fieldEquals("severityIds", buf, offset, len)) {
-        ji.readMap(severityIds, SEVERITY_PARSER, (severity, sevJi) -> sevJi.readString());
+        ji.readMap(severityIds, SEVERITY_PARSER, (_, sevJi) -> sevJi.readString());
       } else if (fieldEquals("incidentTypeId", buf, offset, len)) {
         this.incidentTypeId = ji.readString();
       } else if (fieldEquals("statusId", buf, offset, len)) {

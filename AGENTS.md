@@ -111,9 +111,18 @@ Each `pitest<Suite>` run diffs its unkilled mutants against the checked-in basel
 reasons live in `<module>/config/pitest/README.md`. Baseline flags (mutually
 exclusive): `-PupdateMutationBaseline` (full refresh; seeds genuinely new rows
 `# untriaged`), `-PunionMutationBaseline` (append-only, for observed status flips),
-`-PpruneMutationBaseline` (drop-only, always safe after a killing pass). While
-iterating on one class, scope with `-PmutateOnly=<class-glob>` — scoped reports are
-stamped and refused by every baseline-touching consumer. `-PlistUnkilled` prints
+`-PpruneMutationBaseline` (drop-only, always safe after a killing pass), and
+`-PinitTimeoutAudit` (seeds `config/pitest/<suite>-timeouts.csv` from a run whose
+summary reported timed-out mutants; refused if the file exists or nothing timed
+out — no incident-client suite times out today, so the audit is armed, not
+active). While iterating on one class, scope with `-PmutateOnly=<class-glob>` —
+scoped reports are stamped and refused by every baseline-touching consumer, and
+the certifying flags (`-PnoDriftTolerance`, `-PstrictTimeoutAudit`, which
+escalates an unaudited timeout newcomer, a malformed audit row, or a
+timeout-carrying suite with no audited set to failures) refuse them too: their
+checks are skipped on a scoped report, so a green run would certify nothing.
+Audit advisories that did not fail the build are reprinted one line per suite in
+an end-of-build summary — a warning hundreds of lines up is not a reviewer-stop. `-PlistUnkilled` prints
 unkilled rows with PIT's mutation descriptions and, for a survivor whose
 same-coordinate sibling was detected, the sibling's killing test — the survivor is
 the opposite operand or branch direction of whatever that test pinned. Triage
@@ -321,8 +330,8 @@ test repo and point this build at it with `savaBuildLocalRepo` (the clone path b
 `AGENTS.local.md` or `~/.gradle/gradle.properties`, never in `settings.gradle.kts`):
 
 ```
-(cd <sava-build>; ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository)
-./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo
+(cd <sava-build> && ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository) \
+  && ./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo
 ```
 
 The property adds that repo to `pluginManagement` and rewrites every `software.sava.build*`
@@ -333,15 +342,16 @@ needs editing, and an unset property is the normal published path. Put it in
 
 **The publish is not automatic.** sava-build's test repo is a plain Maven directory, not an
 included build: every sava-build edit needs the publish task re-run, or this build silently
-keeps resolving the previously published jar with no warning. (Gradle does re-read
-`file:` repositories on each resolution, so a *republished* `0.0.0-test` is picked up
-immediately — the stale case is only a forgotten publish.) The warning `settings.gradle.kts`
-prints carries the last-publish age as the tell, but with the configuration cache enabled it
-prints only on a cache miss: a real publish forces one, a *forgotten* publish reuses the entry
-silently. Absence of the warning is not evidence of normal resolution — check
-`<sava-build>/build/sava-test-repo/software/sava/sava-build/maven-metadata.xml` directly when
-behaviour looks stale. When done, drop the property and
-bump the versions in `settings.gradle.kts` to the released sava-build.
+keeps resolving the previously published jar. (Gradle does re-read `file:` repositories on
+each resolution, so a *republished* `0.0.0-test` is picked up immediately — the stale case
+is only a forgotten publish, which is why the snippet above chains the two.) The tell is the
+end-of-build notice the plugin itself prints whenever the property is set — it names the
+resolved repo dir and the last-publish age, and since sava-build 21.5.18 it comes from a
+dataflow action inside the plugin (`SavaBuildLocalRepoNoticePlugin`), not from
+`settings.gradle.kts`, so it fires on every build including configuration-cache hits — the
+old gotcha where a cache hit skipped the settings script and suppressed the warning is gone.
+When done, drop the property and bump the versions in `settings.gradle.kts` to the released
+sava-build.
 
 ## AGENTS.local.md template
 

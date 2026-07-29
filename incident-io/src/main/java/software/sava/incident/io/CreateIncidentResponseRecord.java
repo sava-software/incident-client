@@ -6,7 +6,6 @@ import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -192,44 +191,19 @@ public record CreateIncidentResponseRecord(String callUrl,
         case 0 -> callUrl = ji.readString();
         case 1 -> createdAt = OffsetDateTime.parse(ji.readString());
         case 2 -> creator = parseActorV2(ji);
-        case 3 -> {
-          customFieldEntries = new ArrayList<>();
-          while (ji.readArray()) {
-            customFieldEntries.add(parseCustomFieldEntryV2(ji));
-          }
-        }
-        case 4 -> {
-          durationMetrics = new ArrayList<>();
-          while (ji.readArray()) {
-            durationMetrics.add(parseDurationMetricV2(ji));
-          }
-        }
+        case 3 -> customFieldEntries = ji.readList(this::parseCustomFieldEntryV2);
+        case 4 -> durationMetrics = ji.readList(this::parseDurationMetricV2);
         case 5 -> externalIssueReference = parseExternalIssueReferenceV2(ji);
         case 6 -> hasDebrief = ji.readBoolean();
         case 7 -> id = ji.readString();
-        case 8 -> {
-          incidentRoleAssignments = new ArrayList<>();
-          while (ji.readArray()) {
-            incidentRoleAssignments.add(parseIncidentRoleAssignmentV2(ji));
-          }
-        }
+        case 8 -> incidentRoleAssignments = ji.readList(this::parseIncidentRoleAssignmentV2);
         case 9 -> incidentStatus = parseIncidentStatusV2(ji);
-        case 10 -> {
-          incidentTimestampValues = new ArrayList<>();
-          while (ji.readArray()) {
-            incidentTimestampValues.add(parseIncidentTimestampWithValueV2(ji));
-          }
-        }
+        case 10 -> incidentTimestampValues = ji.readList(this::parseIncidentTimestampWithValueV2);
         case 11 -> incidentType = parseIncidentTypeV2(ji);
         case 12 -> mode = ji.applyChars(MODE_PARSER);
         case 13 -> name = ji.readString();
         case 14 -> permalink = ji.readString();
-        case 15 -> {
-          postmortemDocumentIds = new ArrayList<>();
-          while (ji.readArray()) {
-            postmortemDocumentIds.add(ji.readString());
-          }
-        }
+        case 15 -> postmortemDocumentIds = ji.readList(JsonIterator::readString);
         case 16 -> postmortemDocumentUrl = ji.readString();
         case 17 -> reference = ji.readString();
         case 18 -> severity = parseSeverityV2(ji);
@@ -344,13 +318,8 @@ public record CreateIncidentResponseRecord(String callUrl,
             }
             return true;
           });
-          case 1 -> {
-            // a multi_select field carries one value per selected option
-            p.values = new ArrayList<>();
-            while (ji1.readArray()) {
-              p.values.add(parseCustomFieldValueV2(ji1));
-            }
-          }
+          // a multi_select field carries one value per selected option
+          case 1 -> p.values = ji1.readList(this::parseCustomFieldValueV2);
           default -> ji1.skip();
         }
         return true;
@@ -410,12 +379,7 @@ public record CreateIncidentResponseRecord(String callUrl,
       };
       ji.testObject(CATALOG_ENTRY_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> {
-            p.aliases = new ArrayList<>();
-            while (ji1.readArray()) {
-              p.aliases.add(ji1.readString());
-            }
-          }
+          case 0 -> p.aliases = ji1.readList(JsonIterator::readString);
           case 1 -> p.externalId = ji1.readString();
           case 2 -> p.id = ji1.readString();
           case 3 -> p.name = ji1.readString();
