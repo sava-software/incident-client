@@ -33,17 +33,14 @@ refactored away, or moved below with a reason.
   collections to empty; dead `bearerToken` guard in
   `IncidentIoConfig.createClientBuilder` — the parser validates it present),
   4 accepted below. `request` and `response` are clean.
-- **`adapter`, 7 rows, seeded 2026-08-06 by `mutationOwnershipAudit` adoption.**
-  `IncidentIoClientImpl` and `IncidentIoClient$Builder` had no mutation-suite owner until
-  the `adapter` targets were widened to cover the whole module; the rows are the
-  pre-existing hole made visible, not new debt. All 7 are `NO_COVERAGE`: the response
-  status gate (`lambda$static$0:26` ×4 and its parse return `:30`),
-  `createIncident:50`, and the bearer-token request decorator
-  (`Builder.lambda$bearerToken$0:44`). Closing them needs a wire-level test — an
-  in-process `jdk.httpserver` harness that serves 2xx/non-2xx/unparseable bodies and
-  observes the outgoing `Authorization` header — which `incident-pagerduty` and
-  `incident-webhook` already have and this module does not (its `testModuleInfo` does not
-  yet require `jdk.httpserver`). None of these is an equivalence claim.
+- None for `adapter`. `mutationOwnershipAudit` adoption on 2026-08-06 widened the suite to
+  the whole module and exposed 7 `NO_COVERAGE` rows — a pre-existing hole, not new debt:
+  the response status gate, its parse-failure path, `createIncident`'s return, and the
+  bearer-token request decorator, none of which any accessor reads back. All were closed
+  2026-08-07 by `IncidentIoClientWireTests`, an in-process `jdk.httpserver` harness (the
+  module's `testModuleInfo` gained `jdk.httpserver` to host it) serving 200, 300, 400, 503
+  and a truncated 2xx body, and observing the outgoing `Authorization` header. One row
+  remains, accepted below.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
@@ -56,6 +53,14 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   immutable `List.of`), so the boundary/order mutants only change which
   content-equal instance escapes. Equal but not identical; killable only by
   asserting mutability the API does not promise.
+- `# unreachable-1xx` (adapter: `IncidentIoClientImpl.lambda$static$0`, the `statusCode
+  < 200` arm of the response gate) — the mutant is observable only with a *final* HTTP
+  status below 200, and `java.net.http.HttpClient` never surfaces one: 1xx interim
+  responses are consumed inside the protocol layer, and `jdk.httpserver` refuses to emit
+  them as a final status. Unreachable in-harness; a raw-socket harness writing a literal
+  sub-200 status line would hang until the request timeout, and a flaky harness is worse
+  than recorded debt. The `>= 300` arm is pinned by the 300/400/503 wire tests. Mirrors
+  the same acceptance in `incident-webhook` and `incident-pagerduty`.
 - `# always-true-delegate` (config: `IncidentIoConfig$Parser.test:85`) —
   `return super.test(...)` where the superclass either returns true or
   throws on unknown fields; the mutated constant-true return preserves the

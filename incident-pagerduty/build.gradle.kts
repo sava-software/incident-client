@@ -4,6 +4,8 @@ plugins {
 
 testModuleInfo {
   requires("jdk.httpserver")
+  // JulRecorder captures System.Logger output through its JUL backend
+  requires("java.logging")
   requires("org.junit.jupiter.api")
   runtimeOnly("org.junit.jupiter.engine")
 }
@@ -13,6 +15,7 @@ dependencies {
 }
 
 hardening {
+  generateTestSupport = true
   mutation.register("payload") {
     targetClasses = listOf(
       "software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayload",

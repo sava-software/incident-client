@@ -1,11 +1,4 @@
 !sava-hardening-baseline-schema,1
-software.sava.incident.io.exceptions.IncidentIoRequestException$Parser,create,ConditionalsBoundaryMutator,SURVIVED # copy-on-write # line 102
-software.sava.incident.io.exceptions.IncidentIoRequestException$Parser,create,RemoveConditionalMutator_ORDER_ELSE,SURVIVED # copy-on-write # line 102
-software.sava.incident.io.exceptions.IncidentIoRequestException$Parser,create,RemoveConditionalMutator_ORDER_IF,SURVIVED # copy-on-write # line 102
-software.sava.incident.io.IncidentIoClient$Builder,lambda$bearerToken$0,NullReturnValsMutator,NO_COVERAGE # untriaged # line 44
-software.sava.incident.io.IncidentIoClientImpl,createIncident,NullReturnValsMutator,NO_COVERAGE # untriaged # line 50
-software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,ConditionalsBoundaryMutator,NO_COVERAGE # untriaged # line 26
-software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,ConditionalsBoundaryMutator,NO_COVERAGE # untriaged # line 26
-software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,NullReturnValsMutator,NO_COVERAGE # untriaged # line 30
-software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,RemoveConditionalMutator_ORDER_IF,NO_COVERAGE # untriaged # line 26
-software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,RemoveConditionalMutator_ORDER_IF,NO_COVERAGE # untriaged # line 26
+software.sava.incident.io.exceptions.IncidentIoRequestException$Parser,create,ConditionalsBoundaryMutator,SURVIVED # copy-on-write # line 105
+software.sava.incident.io.exceptions.IncidentIoRequestException$Parser,create,RemoveConditionalMutator_ORDER_ELSE,SURVIVED # copy-on-write # line 105
+software.sava.incident.io.IncidentIoClientImpl,lambda$static$0,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable-1xx # line 26

@@ -3,6 +3,8 @@ plugins {
 }
 
 testModuleInfo {
+  // the wire tests serve real responses to the client's own transport
+  requires("jdk.httpserver")
   requires("org.junit.jupiter.api")
   runtimeOnly("org.junit.jupiter.engine")
 }
