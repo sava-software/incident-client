@@ -1,27 +1,21 @@
 # Mutation-testing baseline & triage policy
 
-Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
-run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+`<suite>-accepted.csv` records this module's argued-unkilled mutants. Each row is
+`class,method,mutator,STATUS` plus a trailing `# <family>` label and a diagnostic
+`# line N` tag; identical rows are sibling mutants of one compound condition and the
+comparison is a multiset, so never hand-dedupe. `<suite>-pitest-version` and
+`<suite>-pitest-toolchain.tsv` bind the PIT/ArcMutate toolchain the rows were measured
+under. A suite with nothing unkilled has no accepted file at all.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
-kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Pure line drift (every new row a same-status shift of a
-stale one, populations unchanged) passes on its own with a notice —
-refresh at a convenient moment. Anything else fails with a per-row
-classification (`shifted` vs `newly covered` vs unexplained) and a churn
-tally: a newly covered row is triage, not churn, and identical rows are
-sibling mutants of one compound condition — the comparison is a
-multiset, so never hand-dedupe the CSV.
+The legal outcomes for a new unkilled mutant, the determinism rules, and the named writer
+tasks that may touch these files are all owned by sava-build: run
+`./gradlew :<module>:hardeningHelp` and `./gradlew :<module>:hardeningAgentTemplate` for the
+installed version's authority, and read sava-build's `HARDENING.md` for the doctrine behind
+them. Never widen a baseline just to make a build pass.
 
-A baseline row may carry a trailing `# note` — `# untriaged` is the
-conventional label for seeded debt. Notes are preserved across
-`-PupdateMutationBaseline` / `-PunionMutationBaseline` rewrites, and the
-verify task counts rows marked `# untriaged` so the debt stays a printed
-number, not prose.
+`# untriaged` marks recorded-but-not-yet-argued debt — it is not acceptance, and a
+`NO_COVERAGE` row is never an equivalence claim. Everything below the triaged heading is
+grouped by the principle that makes it equivalent.
 
 ## Untriaged debt
 
@@ -37,6 +31,31 @@ refactored away, or moved below with a reason.
   sparse-config builder preservation, adapter delegation) or removed by
   refactor (dead null-guard in `customDetailsObject` — both constructors
   initialize the map), 20 accepted below. `response` and `adapter` are clean.
+- **`adapter`, 130 rows, seeded 2026-08-06 by `mutationOwnershipAudit` adoption.** The
+  `adapter` suite previously named three classes; 22 of this module's production classes
+  had no mutation-suite owner at all. Widening the suite to `event.client.*`,
+  `event.service.*` and `exceptions.*` made a pre-existing hole visible — this is not new
+  debt, and none of it is an equivalence claim. By class:
+  - `event.service.PagerDutyServiceVal` 86 and `PagerDutyService` 21 and
+    `PagerDutyServiceBuilder` 3, all `NO_COVERAGE`: the whole `event.service` package is
+    untested. It is PagerDuty's retrying wrapper — the same shape as
+    `incident-core`'s `IncidentServiceVal`, which *is* covered by `IncidentServiceTests`.
+    Closing it means porting that test shape (retry-delay arithmetic, give-up-after call
+    counts, checked-exception propagation, transport-failure retries) onto
+    `PagerDutyService`.
+  - `exceptions.PagerDutyParseException` 5 `NO_COVERAGE` + 4 `SURVIVED`,
+    `PagerDutyRequestException` 2 + 1, its builder 1 + 2: this module has no exceptions
+    test, where `incident-io` and `incident-webhook` both do. Closing it means the
+    accessor / `canBeRetried` boundary / parse-failure-message tests those modules have.
+  - `event.client.PagerDutyEventClient$Builder` 3 `NO_COVERAGE` + 2 `SURVIVED`: the
+    unobserved accessor and header-composition branches of the client builder.
+
+  One further observation worth keeping: the first widened multi-suite run reported a
+  `RUN_ERROR` at `PagerDutyEventClient.asIncidentClient:20`
+  (`NullReturnValsMutator`). A quiet history-free re-run — both scoped to that class and
+  as the full suite — killed it, so it was an invalid execution outcome under multi-suite
+  load, not a defect at that coordinate. Recorded here because the plugin refuses any
+  report containing one, so a repeat must be investigated rather than re-run away.
 
 ## Triaged equivalent mutants (accepted with reasons)
 

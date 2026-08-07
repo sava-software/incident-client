@@ -32,6 +32,15 @@ hardening {
     excludedClasses = listOf("*Test*")
     targetTests = "software.sava.incident.core.api.*Test*"
   }
+  // the exported request/transport builder bases every provider client extends
+  mutation.register("client") {
+    targetClasses = listOf(
+      "software.sava.incident.core.client.*",
+      "software.sava.incident.core.request.*"
+    )
+    excludedClasses = listOf("*Test*")
+    targetTests = "software.sava.incident.core.*Test*"
+  }
 }
 
 //dependencyAnalysis {

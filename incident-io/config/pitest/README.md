@@ -1,27 +1,21 @@
 # Mutation-testing baseline & triage policy
 
-Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
-run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+`<suite>-accepted.csv` records this module's argued-unkilled mutants. Each row is
+`class,method,mutator,STATUS` plus a trailing `# <family>` label and a diagnostic
+`# line N` tag; identical rows are sibling mutants of one compound condition and the
+comparison is a multiset, so never hand-dedupe. `<suite>-pitest-version` and
+`<suite>-pitest-toolchain.tsv` bind the PIT/ArcMutate toolchain the rows were measured
+under. A suite with nothing unkilled has no accepted file at all.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
-kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Pure line drift (every new row a same-status shift of a
-stale one, populations unchanged) passes on its own with a notice —
-refresh at a convenient moment. Anything else fails with a per-row
-classification (`shifted` vs `newly covered` vs unexplained) and a churn
-tally: a newly covered row is triage, not churn, and identical rows are
-sibling mutants of one compound condition — the comparison is a
-multiset, so never hand-dedupe the CSV.
+The legal outcomes for a new unkilled mutant, the determinism rules, and the named writer
+tasks that may touch these files are all owned by sava-build: run
+`./gradlew :<module>:hardeningHelp` and `./gradlew :<module>:hardeningAgentTemplate` for the
+installed version's authority, and read sava-build's `HARDENING.md` for the doctrine behind
+them. Never widen a baseline just to make a build pass.
 
-A baseline row may carry a trailing `# note` — `# untriaged` is the
-conventional label for seeded debt. Notes are preserved across
-`-PupdateMutationBaseline` / `-PunionMutationBaseline` rewrites, and the
-verify task counts rows marked `# untriaged` so the debt stays a printed
-number, not prose.
+`# untriaged` marks recorded-but-not-yet-argued debt — it is not acceptance, and a
+`NO_COVERAGE` row is never an equivalence claim. Everything below the triaged heading is
+grouped by the principle that makes it equivalent.
 
 ## Untriaged debt
 
@@ -39,6 +33,17 @@ refactored away, or moved below with a reason.
   collections to empty; dead `bearerToken` guard in
   `IncidentIoConfig.createClientBuilder` — the parser validates it present),
   4 accepted below. `request` and `response` are clean.
+- **`adapter`, 7 rows, seeded 2026-08-06 by `mutationOwnershipAudit` adoption.**
+  `IncidentIoClientImpl` and `IncidentIoClient$Builder` had no mutation-suite owner until
+  the `adapter` targets were widened to cover the whole module; the rows are the
+  pre-existing hole made visible, not new debt. All 7 are `NO_COVERAGE`: the response
+  status gate (`lambda$static$0:26` ×4 and its parse return `:30`),
+  `createIncident:50`, and the bearer-token request decorator
+  (`Builder.lambda$bearerToken$0:44`). Closing them needs a wire-level test — an
+  in-process `jdk.httpserver` harness that serves 2xx/non-2xx/unparseable bodies and
+  observes the outgoing `Authorization` header — which `incident-pagerduty` and
+  `incident-webhook` already have and this module does not (its `testModuleInfo` does not
+  yet require `jdk.httpserver`). None of these is an equivalence claim.
 
 ## Triaged equivalent mutants (accepted with reasons)
 

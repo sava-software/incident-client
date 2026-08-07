@@ -35,6 +35,12 @@ build/
 !*.csv
 !*.md
 !*.yml
+!*.tsv
+!/arcmutate-licence.txt
+
+# Mutation-record provenance written by the hardening plugin's BaselineRebase
+# (the PIT version file has no extension; the toolchain sidecar is *.tsv above).
+!**/config/pitest/*-pitest-version
 
 # Gradle wrapper.
 !/gradlew

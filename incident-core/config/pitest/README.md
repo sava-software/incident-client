@@ -1,27 +1,21 @@
 # Mutation-testing baseline & triage policy
 
-Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
-run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+`<suite>-accepted.csv` records this module's argued-unkilled mutants. Each row is
+`class,method,mutator,STATUS` plus a trailing `# <family>` label and a diagnostic
+`# line N` tag; identical rows are sibling mutants of one compound condition and the
+comparison is a multiset, so never hand-dedupe. `<suite>-pitest-version` and
+`<suite>-pitest-toolchain.tsv` bind the PIT/ArcMutate toolchain the rows were measured
+under. A suite with nothing unkilled has no accepted file at all.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
-kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Pure line drift (every new row a same-status shift of a
-stale one, populations unchanged) passes on its own with a notice —
-refresh at a convenient moment. Anything else fails with a per-row
-classification (`shifted` vs `newly covered` vs unexplained) and a churn
-tally: a newly covered row is triage, not churn, and identical rows are
-sibling mutants of one compound condition — the comparison is a
-multiset, so never hand-dedupe the CSV.
+The legal outcomes for a new unkilled mutant, the determinism rules, and the named writer
+tasks that may touch these files are all owned by sava-build: run
+`./gradlew :<module>:hardeningHelp` and `./gradlew :<module>:hardeningAgentTemplate` for the
+installed version's authority, and read sava-build's `HARDENING.md` for the doctrine behind
+them. Never widen a baseline just to make a build pass.
 
-A baseline row may carry a trailing `# note` — `# untriaged` is the
-conventional label for seeded debt. Notes are preserved across
-`-PupdateMutationBaseline` / `-PunionMutationBaseline` rewrites, and the
-verify task counts rows marked `# untriaged` so the debt stays a printed
-number, not prose.
+`# untriaged` marks recorded-but-not-yet-argued debt — it is not acceptance, and a
+`NO_COVERAGE` row is never an equivalence claim. Everything below the triaged heading is
+grouped by the principle that makes it equivalent.
 
 ## Untriaged debt
 
@@ -34,6 +28,14 @@ refactored away, or moved below with a reason.
   give-up-after call counts, checked-exception propagation, transport-failure
   retries, blank/absent config values, and JUL-captured failure logging via
   the generated `JulRecorder`), 8 accepted below.
+- None for `client`. The suite was added 2026-08-06 when `mutationOwnershipAudit`
+  showed `core.client.*` and `core.request.*` had no mutation-suite owner: the
+  exported transport/request builder bases are extended only by provider clients in
+  other Gradle modules, so no kill could ever land in this one. All 19 mutants were
+  killed on the first run by `HttpApiClientBuilderTests` and `RequestTests`, which
+  pin fluent-setter identity, accessor round-trips, `endpoint(String)` URI parsing,
+  and that `setDefaults()` fills only the unset transport values — an overwriting
+  defaults hook would silently discard a caller's `HttpClient`.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
@@ -56,20 +58,29 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   map through the accessor, which the API does not invite. Equal but not
   identical.
 - `# service-loader-binding` (api: `IncidentClients.createClient:33,37,41`,
-  `loadFactory:47`) — return-value mutants on the public one-line wrappers
-  that bind `ServiceLoader.load(IncidentClientFactory.class)` and delegate to
-  the package-private registry seams. No provider module is on incident-core's
-  test path, so the wrappers can only throw (provider never found) and their
-  return statements are unreachable here by construction. The resolution and
-  dispatch logic behind them is fully pinned through the seams
-  (`IncidentClientsTests` stub factories), and the wrappers themselves are
-  exercised end-to-end by the provider modules' factory tests
-  (`PagerDutyIncidentClientFactoryTests`, `IncidentIoIncidentClientFactoryTests`),
-  which run the public entry points against real `ServiceLoader` registration —
-  those kills just land outside this suite's `targetTests`. Escape hatch: none
-  worth taking — registering a test-only provider from the patched core test
-  module would need a synthesized `provides` directive the whitebox test setup
-  does not offer.
+  `loadFactory:47`) — **the structural `NO_COVERAGE` exception, re-argued
+  2026-08-06; not an equivalence claim.** These are the `NullReturnValsMutator`
+  mutants on the four public one-line wrappers that bind
+  `ServiceLoader.load(IncidentClientFactory.class)` and delegate to the
+  package-private registry seams. No provider module is on incident-core's test
+  path, so `loadFactory` always throws here and every one of these blocks exits by
+  throw. PIT probes a block at its end, so the block never completes: the rows read
+  `NO_COVERAGE` whether or not the wrapper ran, and their return-value mutants can
+  never change status. Doctrine's remedy for such a line is a test asserting the
+  **throw's** contract, not coverage, and each wrapper has one — `createClient:33`
+  by `missingProvider` and `blankProvider`, `createClient:37` by
+  `prefixedProviderLookup`, `createClient:41` by `jsonProviderMustPrecedeConfig`
+  and `jsonUnknownField`, `loadFactory:47` by `unknownProvider` (which pins the
+  exact "No IncidentClientFactory found for provider" message). The resolution and
+  dispatch logic behind the wrappers is pinned through the seams with
+  `IncidentClientsTests`' stub factories, and the wrappers run end-to-end against
+  real `ServiceLoader` registration in the provider modules'
+  `PagerDutyIncidentClientFactoryTests` / `IncidentIoIncidentClientFactoryTests` —
+  kills that land outside this suite's `targetTests`. Registering a test-only
+  provider here would not convert these rows: it would move the throw, not make the
+  block complete, and a harness whose result depended on whether the module-path
+  `test` task or PIT's classpath minion discovered it is exactly what doctrine
+  forbids committing.
 - `# async-routing` (api: `IncidentServiceVal.retry:71` ×3) — `retryDelay >
   0` routes between `exceptionallyComposeAsync(delayedExecutor(...))` and
   `exceptionallyCompose`: at delay 0 both produce identical results and

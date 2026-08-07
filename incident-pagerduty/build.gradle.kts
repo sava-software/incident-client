@@ -15,21 +15,30 @@ dependencies {
 hardening {
   mutation.register("payload") {
     targetClasses = listOf(
+      "software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayload",
+      "software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayload\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayloadRecord",
       "software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayloadRecord\$*",
+      "software.sava.incident.pagerduty.event.data.PagerDutyEventPayload",
+      "software.sava.incident.pagerduty.event.data.PagerDutyEventPayload\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyEventPayloadBuilder",
       "software.sava.incident.pagerduty.event.data.PagerDutyEventPayloadRecord",
       "software.sava.incident.pagerduty.event.data.PagerDutyLinkRef",
+      "software.sava.incident.pagerduty.event.data.PagerDutyLinkRef\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyLinkRefVal",
       "software.sava.incident.pagerduty.event.data.PagerDutyLinkRefVal\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyImageRef",
+      "software.sava.incident.pagerduty.event.data.PagerDutyImageRef\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyImageRefVal",
-      "software.sava.incident.pagerduty.event.data.PagerDutyImageRefVal\$*"
+      "software.sava.incident.pagerduty.event.data.PagerDutyImageRefVal\$*",
+      "software.sava.incident.pagerduty.event.data.PagerDutySeverity"
     )
     targetTests = "software.sava.incident.pagerduty.event.*Test*"
   }
   mutation.register("response") {
     targetClasses = listOf(
+      "software.sava.incident.pagerduty.event.data.PagerDutyEventResponse",
+      "software.sava.incident.pagerduty.event.data.PagerDutyEventResponse\$*",
       "software.sava.incident.pagerduty.event.data.PagerDutyEventResponseVal",
       "software.sava.incident.pagerduty.event.data.PagerDutyEventResponseVal\$*"
     )
@@ -44,10 +53,17 @@ hardening {
   mutation.register("adapter") {
     targetClasses = listOf(
       "software.sava.incident.pagerduty.event.client.PagerDutyIncidentClient",
+      "software.sava.incident.pagerduty.event.client.PagerDutyIncidentClient\$*",
+      "software.sava.incident.pagerduty.event.client.PagerDutyIncidentClientFactory",
+      "software.sava.incident.pagerduty.event.client.PagerDutyEventClient",
+      "software.sava.incident.pagerduty.event.client.PagerDutyEventClient\$*",
       "software.sava.incident.pagerduty.event.client.PagerDutyEventClientImpl",
-      "software.sava.incident.pagerduty.event.client.PagerDutyEventClientImpl\$*"
+      "software.sava.incident.pagerduty.event.client.PagerDutyEventClientImpl\$*",
+      "software.sava.incident.pagerduty.event.service.*",
+      "software.sava.incident.pagerduty.exceptions.*"
     )
-    targetTests = "software.sava.incident.pagerduty.event.*Test*"
+    excludedClasses = listOf("*Test*")
+    targetTests = "software.sava.incident.pagerduty.*Test*"
   }
   fuzz.register("payload") {
     targetClass = "software.sava.incident.pagerduty.event.data.PagerDutyPayloadFuzz"

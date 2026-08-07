@@ -1,3 +1,4 @@
-software.sava.incident.webhook.WebhookClient$Builder,createClient,46,RemoveConditionalMutator_EQUAL_IF,SURVIVED # empty-noop-guard
-software.sava.incident.webhook.WebhookClientImpl,lambda$static$0,23,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable-1xx
-software.sava.incident.webhook.WebhookClientImpl,lambda$static$0,27,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive-null-guard
+!sava-hardening-baseline-schema,1
+software.sava.incident.webhook.WebhookClient$Builder,createClient,RemoveConditionalMutator_EQUAL_IF,SURVIVED # empty-noop-guard # line 46
+software.sava.incident.webhook.WebhookClientImpl,lambda$static$0,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable-1xx # line 23
+software.sava.incident.webhook.WebhookClientImpl,lambda$static$0,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive-null-guard # line 27

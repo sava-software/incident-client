@@ -15,6 +15,7 @@ hardening {
   mutation.register("request") {
     targetClasses = listOf(
       "software.sava.incident.io.CreateIncidentRequestRecord",
+      "software.sava.incident.io.CreateIncidentRequest",
       "software.sava.incident.io.CreateIncidentRequest\$*"
     )
     targetTests = "software.sava.incident.io.*Test*"
@@ -22,7 +23,9 @@ hardening {
   mutation.register("response") {
     targetClasses = listOf(
       "software.sava.incident.io.CreateIncidentResponseRecord",
-      "software.sava.incident.io.CreateIncidentResponseRecord\$*"
+      "software.sava.incident.io.CreateIncidentResponseRecord\$*",
+      "software.sava.incident.io.CreateIncidentResponse",
+      "software.sava.incident.io.CreateIncidentResponse\$*"
     )
     targetTests = "software.sava.incident.io.*Test*"
   }
@@ -36,6 +39,10 @@ hardening {
     targetClasses = listOf(
       "software.sava.incident.io.IncidentIoIncidentClient",
       "software.sava.incident.io.IncidentIoIncidentClient\$*",
+      "software.sava.incident.io.IncidentIoIncidentClientFactory",
+      "software.sava.incident.io.IncidentIoClient",
+      "software.sava.incident.io.IncidentIoClient\$*",
+      "software.sava.incident.io.IncidentIoClientImpl",
       "software.sava.incident.io.exceptions.*"
     )
     excludedClasses = listOf("*Test*")

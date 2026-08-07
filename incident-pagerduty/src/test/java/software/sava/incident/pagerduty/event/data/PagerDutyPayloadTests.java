@@ -555,4 +555,24 @@ final class PagerDutyPayloadTests {
     assertEquals(payload.links(), changeCopy.links());
     assertEquals(payload.images(), changeCopy.images());
   }
+
+  @Test
+  void nullPrototypeYieldsAnEmptyBuilderRatherThanFailing() {
+    // the prototype overloads document a null prototype as "no prototype"; routing null
+    // into the copy constructor instead would NPE on the first component read
+    final var event = PagerDutyEventPayload.build(null)
+        .summary("summary")
+        .source("source")
+        .severity(PagerDutySeverity.info)
+        .create();
+    assertEquals("summary", event.summary());
+    assertNull(event.component());
+
+    final var change = PagerDutyChangeEventPayload.build(null)
+        .summary("summary")
+        .source("source")
+        .create();
+    assertEquals("summary", change.summary());
+    assertTrue(change.links().isEmpty());
+  }
 }
