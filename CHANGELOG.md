@@ -1,5 +1,27 @@
 # Changelog
 
+## [25.5.0](https://github.com/sava-software/incident-client/compare/25.4.0...25.5.0) (2026-08-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **incident-io:** enforce the API's required fields and tolerate null optionals
+
+### Features
+
+* **hardening:** complete the baseline schema, provenance, and ownership migration ([60010d1](https://github.com/sava-software/incident-client/commit/60010d100e068fc7bc47b4aa48196f6ca753430b))
+* **incident-io:** enforce the API's required fields and tolerate null optionals ([9cf8979](https://github.com/sava-software/incident-client/commit/9cf89797b59c92a91974cd433b3f4db5517c7e86))
+
+
+### Bug Fixes
+
+* **incident-io:** parse the new required duration-metric status field ([e65fe01](https://github.com/sava-software/incident-client/commit/e65fe015ef6e022889a1248031547d9d97fead63))
+
+
+### Miscellaneous Chores
+
+* release 25.5.0 ([de30d8d](https://github.com/sava-software/incident-client/commit/de30d8db224516dce0353e2f72936a0a484e3a09))
+
 ## [25.4.0](https://github.com/sava-software/incident-client/compare/25.3.0...25.4.0) (2026-07-28)
 
 
