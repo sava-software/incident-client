@@ -8,11 +8,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /// A `POST /v2/incidents` request (`Incidents V2#Create`). Field names and shapes
-/// follow `IncidentsCreatePayloadV2`; the API requires `idempotency_key` and
-/// `visibility`, which this builder does not enforce — the provider adapter supplies
-/// both.
+/// follow `IncidentsCreatePayloadV2`. The API requires `idempotency_key` and
+/// `visibility`: [Builder#build()] defaults the key to a random UUID and rejects a
+/// missing visibility, so a request that reaches the wire is never missing either.
 public interface CreateIncidentRequest extends PostRequest {
 
   static Builder requestBuilder() {
@@ -269,10 +270,21 @@ public interface CreateIncidentRequest extends PostRequest {
       return this;
     }
 
+    /// Throws [IllegalStateException] if `visibility` is unset: the API rejects a create
+    /// without one and there is no safe default, since guessing between `public` and
+    /// `private` would decide an incident's exposure. An unset `idempotencyKey` defaults to
+    /// a random UUID — the key only has to be stable across retries of *this* request, and
+    /// it is captured here at build time.
     public CreateIncidentRequest build() {
+      if (visibility == null || visibility.isBlank()) {
+        throw new IllegalStateException("CreateIncidentRequest 'visibility' is required.");
+      }
+      final var key = idempotencyKey == null || idempotencyKey.isBlank()
+          ? UUID.randomUUID().toString()
+          : idempotencyKey;
       return new CreateIncidentRequestRecord(
           timeout(),
-          idempotencyKey,
+          key,
           name,
           summary,
           incidentTypeId,

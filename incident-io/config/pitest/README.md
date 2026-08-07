@@ -53,6 +53,16 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   immutable `List.of`), so the boundary/order mutants only change which
   content-equal instance escapes. Equal but not identical; killable only by
   asserting mutability the API does not promise.
+- `# leading-comma-guard` (request: `CreateIncidentRequestRecord.body:157` and
+  `appendArray:175`) — both are `sb.length() > 1` guards deciding whether a separating
+  comma is needed, mutated to `>= 1`. `idempotency_key` is required and emitted first, and
+  `build()` guarantees it is non-blank, so `appendField` always writes it: by the time any
+  later section runs, `sb.length()` is at least the length of that pair and never 1, which
+  makes `>` and `>=` agree. The one site where the boundary *is* observable —
+  `appendField`'s own guard, on that very first field — is killed. Escape hatch: if
+  `idempotency_key` ever became optional again, or a collection section were reordered
+  ahead of it, these become reachable and this argument must be re-read. The guards stay
+  because they are what keeps that reordering safe.
 - `# unreachable-1xx` (adapter: `IncidentIoClientImpl.lambda$static$0`, the `statusCode
   < 200` arm of the response gate) — the mutant is observable only with a *final* HTTP
   status below 200, and `java.net.http.HttpClient` never surfaces one: 1xx interim

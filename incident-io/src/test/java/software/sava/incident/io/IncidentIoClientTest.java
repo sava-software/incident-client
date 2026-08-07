@@ -6,9 +6,9 @@ import systems.comodal.jsoniter.JsonIterator;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 final class IncidentIoClientTest {
 
@@ -32,13 +32,14 @@ final class IncidentIoClientTest {
         .severityId("severity-123")
         .statusId("status-123")
         .visibility(CreateIncidentRequest.Visibility.PUBLIC)
+        .idempotencyKey("idem-1")
         .build();
 
     final var body = request.body();
     assertNotNull(body);
     // Basic validation of the JSON body
     assertEquals("""
-        {"name":"Test Incident","summary":"Test Summary","incident_type_id":"type-123","severity_id":"severity-123","incident_status_id":"status-123","visibility":"public"}""", body
+        {"idempotency_key":"idem-1","name":"Test Incident","summary":"Test Summary","incident_type_id":"type-123","severity_id":"severity-123","incident_status_id":"status-123","visibility":"public"}""", body
     );
   }
 
@@ -95,16 +96,39 @@ final class IncidentIoClientTest {
     final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
-        .idempotencyKey(null) // Null should be excluded
+        .idempotencyKey(null) // required by the API: build() substitutes a generated key
         .incidentTypeId("type-123")
-        .severityId("  ") // Blank string should be excluded
+        .severityId("  ") // blank optional: excluded
+        .visibility("public")
         .build();
 
-    final String body = request.body();
-    // name, summary, incident_type_id are present. idempotency_key, severity_id should be absent.
+    // a blank optional is still omitted, but the required key is generated rather than
+    // dropped -- the API rejects a create without one
+    final var key = request.idempotencyKey();
+    assertNotNull(key);
+    assertEquals(UUID.fromString(key).toString(), key, "the generated key is a UUID");
     assertEquals("""
-        {"name":"Name","summary":"Summary","incident_type_id":"type-123"}""", body
+        {"idempotency_key":"%s","name":"Name","summary":"Summary","incident_type_id":"type-123",\
+        "visibility":"public"}""".formatted(key), request.body()
     );
+  }
+
+  @Test
+  void aSuppliedIdempotencyKeyIsUsedVerbatimAndAMissingVisibilityIsRejected() {
+    assertEquals("supplied-key", CreateIncidentRequest.requestBuilder()
+        .name("Name")
+        .idempotencyKey("supplied-key")
+        .visibility("public")
+        .build()
+        .idempotencyKey());
+
+    // visibility has no safe default -- guessing would decide the incident's exposure
+    final var noVisibility = CreateIncidentRequest.requestBuilder().name("Name");
+    final var thrown = assertThrows(IllegalStateException.class, noVisibility::build);
+    assertTrue(thrown.getMessage().contains("'visibility' is required"));
+
+    final var blankVisibility = CreateIncidentRequest.requestBuilder().name("Name").visibility("  ");
+    assertThrows(IllegalStateException.class, blankVisibility::build);
   }
 
   @Test
@@ -115,27 +139,32 @@ final class IncidentIoClientTest {
         .incidentTypeId("type-123")
         .incidentRoleAssignments(List.of()) // Empty collection should be excluded
         .customFieldValues(Map.of()) // Empty map should be excluded
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
 
     final var body = request.body();
     assertEquals("""
-        {"name":"Name","summary":"Summary","incident_type_id":"type-123"}""", body
+        {"idempotency_key":"idem-1","name":"Name","summary":"Summary","incident_type_id":"type-123","visibility":"public"}""", body
     );
   }
 
   @Test
   void testCreateIncidentRequestBodyEnumsAndBooleans() {
+    // a null string mode clears it; visibility cannot be cleared and still build
     final var request = CreateIncidentRequest.requestBuilder()
         .name("Name")
         .summary("Summary")
         .incidentTypeId("type-123")
         .mode((String) null)
-        .visibility((String) null)
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
 
-    final var body = request.body();
+    assertNull(request.mode());
     assertEquals("""
-        {"name":"Name","summary":"Summary","incident_type_id":"type-123"}""", body
+        {"idempotency_key":"idem-1","name":"Name","summary":"Summary","incident_type_id":"type-123",\
+        "visibility":"public"}""", request.body()
     );
   }
 

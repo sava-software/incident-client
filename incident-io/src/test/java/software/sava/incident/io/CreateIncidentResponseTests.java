@@ -427,4 +427,36 @@ final class CreateIncidentResponseTests {
     assertEquals(CreateIncidentResponse.Mode.retrospective, response.mode());
     assertFalse(response.hasDebrief());
   }
+
+  @Test
+  void explicitNullsOnOptionalFieldsReadAsAbsentRatherThanAbortingTheParse() {
+    // no schema in the Create Incident closure is marked nullable, but a server that
+    // sends "field": null for an absent optional must not take down the whole response:
+    // json-iterator's readBoolean/readLong/readDouble all throw on a JSON null, and
+    // OffsetDateTime.parse would NPE on one.
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"id":"inc-1","has_debrief":null,\
+        "workload_minutes_late":null,"workload_minutes_sleeping":null,\
+        "workload_minutes_total":null,"workload_minutes_working":null,\
+        "duration_metrics":[{"duration_metric":{"id":"dm-1","name":"Lasted"},\
+        "value_seconds":null,"status":"calculating"}],\
+        "incident_timestamp_values":[{"incident_timestamp":{"id":"ts-1","name":"Reported"},\
+        "value":{"value":null}}]}}"""));
+
+    assertEquals("inc-1", response.id());
+    assertFalse(response.hasDebrief(), "a null boolean reads as its absent default");
+    assertNull(response.workloadMinutesLate());
+    assertNull(response.workloadMinutesSleeping());
+    assertNull(response.workloadMinutesTotal());
+    assertNull(response.workloadMinutesWorking());
+
+    final var metric = List.copyOf(response.durationMetrics()).getFirst();
+    assertEquals("dm-1", metric.durationMetricId());
+    assertNull(metric.valueSeconds(), "a null value_seconds is absent, not zero");
+    assertEquals("calculating", metric.status());
+
+    final var timestamp = List.copyOf(response.incidentTimestampValues()).getFirst();
+    assertEquals("ts-1", timestamp.timestampId());
+    assertNull(timestamp.value());
+  }
 }

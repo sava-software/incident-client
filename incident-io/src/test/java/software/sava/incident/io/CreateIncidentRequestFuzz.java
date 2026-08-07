@@ -37,15 +37,21 @@ public final class CreateIncidentRequestFuzz {
       return;
     }
     final var parts = new String(data, 1, data.length - 1, UTF_8).split(DELIMITER, -1);
+    // build() requires a visibility and defaults a blank idempotency key to a random UUID.
+    // Both are preconditions of constructing a request, not part of what this target
+    // explores, so a blank fuzz part falls back to a fixed value: the fields stay fuzzed
+    // for escaping coverage while the round-trip stays deterministic.
+    final var idempotencyKey = required(part(parts, 2), "fuzz-idempotency-key");
+    final var visibility = required(part(parts, 7), "public");
     final var builder = CreateIncidentRequest.requestBuilder()
         .name(part(parts, 0))
         .summary(part(parts, 1))
-        .idempotencyKey(part(parts, 2))
+        .idempotencyKey(idempotencyKey)
         .incidentTypeId(part(parts, 3))
         .mode(part(parts, 4))
         .severityId(part(parts, 5))
         .statusId(part(parts, 6))
-        .visibility(part(parts, 7))
+        .visibility(visibility)
         .slackTeamId(part(parts, 8))
         .slackChannelNameOverride(part(parts, 9));
     if (parts.length > 13) {
@@ -202,12 +208,12 @@ public final class CreateIncidentRequestFuzz {
 
     assertOptionalField(part(parts, 0), p.name, "name");
     assertOptionalField(part(parts, 1), p.summary, "summary");
-    assertOptionalField(part(parts, 2), p.idempotencyKey, "idempotency_key");
+    assertEq(idempotencyKey, p.idempotencyKey, "idempotency_key");
     assertOptionalField(part(parts, 3), p.incidentTypeId, "incident_type_id");
     assertOptionalField(part(parts, 4), p.mode, "mode");
     assertOptionalField(part(parts, 5), p.severityId, "severity_id");
     assertOptionalField(part(parts, 6), p.statusId, "incident_status_id");
-    assertOptionalField(part(parts, 7), p.visibility, "visibility");
+    assertEq(visibility, p.visibility, "visibility");
     assertOptionalField(part(parts, 8), p.slackTeamId, "slack_team_id");
     assertOptionalField(part(parts, 9), p.slackChannelNameOverride, "slack_channel_name_override");
     if (parts.length > 13) {
@@ -262,6 +268,11 @@ public final class CreateIncidentRequestFuzz {
 
   private static String part(final String[] parts, final int i) {
     return i < parts.length ? parts[i] : null;
+  }
+
+  /// A spec-required field: the fuzzed value when it is usable, else `fallback`.
+  private static String required(final String value, final String fallback) {
+    return value == null || value.isBlank() ? fallback : value;
   }
 
   private static void assertNoRawControlChars(final String json) {

@@ -73,6 +73,8 @@ final class CreateIncidentRequestTests {
         .incidentRoleAssignments(assignments)
         .customFieldEntries(entries)
         .incidentTimestampValues(timestampValues)
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
 
     // the builder copies, so mutating the caller's collections cannot reach the request
@@ -99,6 +101,8 @@ final class CreateIncidentRequestTests {
             new CreateIncidentRequest.CustomFieldEntry("cf-1", "v-1"))))
         .incidentTimestampValues(new ArrayList<>(List.of(
             new CreateIncidentRequest.IncidentTimestampValue("ts-1", null))))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
 
     assertThrows(UnsupportedOperationException.class, () -> request.incidentRoleAssignments().clear());
@@ -156,13 +160,22 @@ final class CreateIncidentRequestTests {
 
   @Test
   void nullEnumSettersClearFields() {
+    // the typed setters accept null as "clear", rather than NPEing or writing "null"
     final var request = CreateIncidentRequest.requestBuilder()
         .mode((CreateIncidentRequest.Mode) null)
-        .visibility((CreateIncidentRequest.Visibility) null)
+        .visibility(CreateIncidentRequest.Visibility.PUBLIC)
+        .idempotencyKey("idem-1")
         .build();
     assertNull(request.mode());
-    assertNull(request.visibility());
-    assertEquals("{}", request.body());
+    assertEquals("""
+        {"idempotency_key":"idem-1","visibility":"public"}""", request.body());
+
+    // clearing visibility is legal on the builder but not buildable: the API requires it
+    final var cleared = CreateIncidentRequest.requestBuilder()
+        .visibility(CreateIncidentRequest.Visibility.PRIVATE)
+        .visibility((CreateIncidentRequest.Visibility) null)
+        .idempotencyKey("idem-1");
+    assertThrows(IllegalStateException.class, cleared::build);
   }
 
   @Test
@@ -171,9 +184,11 @@ final class CreateIncidentRequestTests {
         .incidentRoleAssignments(List.of(
             new CreateIncidentRequest.IncidentRoleAssignment("r-1", "a-1")
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"incident_role_assignments":[{"incident_role_id":"r-1","assignee":{"id":"a-1"}}]}""", request.body()
+        {"idempotency_key":"idem-1","incident_role_assignments":[{"incident_role_id":"r-1","assignee":{"id":"a-1"}}],"visibility":"public"}""", request.body()
     );
   }
 
@@ -190,13 +205,11 @@ final class CreateIncidentRequestTests {
             new CreateIncidentRequest.IncidentRoleAssignment(
                 "r-4", new CreateIncidentRequest.UserReference(null, " ", ""))
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"incident_role_assignments":[\
-        {"incident_role_id":"r-1","assignee":{"email":"a@example.com"}},\
-        {"incident_role_id":"r-2","assignee":{"slack_user_id":"U2"}},\
-        {"incident_role_id":"r-3"},\
-        {"incident_role_id":"r-4"}]}""", request.body()
+        {"idempotency_key":"idem-1","incident_role_assignments":[{"incident_role_id":"r-1","assignee":{"email":"a@example.com"}},{"incident_role_id":"r-2","assignee":{"slack_user_id":"U2"}},{"incident_role_id":"r-3"},{"incident_role_id":"r-4"}],"visibility":"public"}""", request.body()
     );
   }
 
@@ -204,9 +217,11 @@ final class CreateIncidentRequestTests {
   void bodyWithOnlyCustomFieldValues() {
     final var request = CreateIncidentRequest.requestBuilder()
         .customFieldValues(Map.of("k-1", "v-1"))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"custom_field_entries":[{"custom_field_id":"k-1","values":[{"value_text":"v-1"}]}]}""", request.body()
+        {"idempotency_key":"idem-1","visibility":"public","custom_field_entries":[{"custom_field_id":"k-1","values":[{"value_text":"v-1"}]}]}""", request.body()
     );
   }
 
@@ -230,17 +245,11 @@ final class CreateIncidentRequestTests {
                 List.of(new CreateIncidentRequest.CustomFieldValue(
                     "v-1", "cat-2", "https://example.com/2", "7", "opt-3", "text-2")))
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"custom_field_entries":[\
-        {"custom_field_id":"cf-text","values":[{"value_text":"some text"}]},\
-        {"custom_field_id":"cf-multi","values":[{"value_option_id":"opt-1"},{"value_option_id":"opt-2"}]},\
-        {"custom_field_id":"cf-catalog","values":[{"value_catalog_entry_id":"cat-1"}]},\
-        {"custom_field_id":"cf-link","values":[{"value_link":"https://example.com/"}]},\
-        {"custom_field_id":"cf-numeric","values":[{"value_numeric":"123.456"}]},\
-        {"custom_field_id":"cf-every-field","values":[{"id":"v-1","value_catalog_entry_id":"cat-2",\
-        "value_link":"https://example.com/2","value_numeric":"7","value_option_id":"opt-3",\
-        "value_text":"text-2"}]}]}""", request.body()
+        {"idempotency_key":"idem-1","visibility":"public","custom_field_entries":[{"custom_field_id":"cf-text","values":[{"value_text":"some text"}]},{"custom_field_id":"cf-multi","values":[{"value_option_id":"opt-1"},{"value_option_id":"opt-2"}]},{"custom_field_id":"cf-catalog","values":[{"value_catalog_entry_id":"cat-1"}]},{"custom_field_id":"cf-link","values":[{"value_link":"https://example.com/"}]},{"custom_field_id":"cf-numeric","values":[{"value_numeric":"123.456"}]},{"custom_field_id":"cf-every-field","values":[{"id":"v-1","value_catalog_entry_id":"cat-2","value_link":"https://example.com/2","value_numeric":"7","value_option_id":"opt-3","value_text":"text-2"}]}]}""", request.body()
     );
   }
 
@@ -258,12 +267,11 @@ final class CreateIncidentRequestTests {
                 CreateIncidentRequest.CustomFieldValue.text(""),
                 CreateIncidentRequest.CustomFieldValue.text("kept")))
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"custom_field_entries":[\
-        {"custom_field_id":"cf-unset","values":[]},\
-        {"custom_field_id":"cf-blank","values":[]},\
-        {"custom_field_id":"cf-mixed","values":[{"value_text":"kept"}]}]}""", request.body()
+        {"idempotency_key":"idem-1","visibility":"public","custom_field_entries":[{"custom_field_id":"cf-unset","values":[]},{"custom_field_id":"cf-blank","values":[]},{"custom_field_id":"cf-mixed","values":[{"value_text":"kept"}]}]}""", request.body()
     );
   }
 
@@ -275,11 +283,11 @@ final class CreateIncidentRequestTests {
             new CreateIncidentRequest.IncidentTimestampValue(
                 "ts-2", OffsetDateTime.parse("2024-05-01T12:00:00.123456+02:00"))
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"incident_timestamp_values":[\
-        {"incident_timestamp_id":"ts-1"},\
-        {"incident_timestamp_id":"ts-2","value":"2024-05-01T12:00:00.123456+02:00"}]}""", request.body()
+        {"idempotency_key":"idem-1","visibility":"public","incident_timestamp_values":[{"incident_timestamp_id":"ts-1"},{"incident_timestamp_id":"ts-2","value":"2024-05-01T12:00:00.123456+02:00"}]}""", request.body()
     );
   }
 
@@ -304,45 +312,55 @@ final class CreateIncidentRequestTests {
         .incidentRoleAssignments(List.of(
             new CreateIncidentRequest.IncidentRoleAssignment("", "a-1")
         ))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"incident_role_assignments":[{"incident_role_id":"","assignee":{"id":"a-1"}}],\
-        "custom_field_entries":[{"custom_field_id":"","values":[{"value_text":"v-1"}]},\
-        {"custom_field_id":"","values":[]}],\
-        "incident_timestamp_values":[{"incident_timestamp_id":" ","value":"2024-05-01T12:00:00Z"},\
-        {"incident_timestamp_id":""}]}""", request.body()
+        {"idempotency_key":"idem-1","incident_role_assignments":[{"incident_role_id":"","assignee":{"id":"a-1"}}],"visibility":"public","custom_field_entries":[{"custom_field_id":"","values":[{"value_text":"v-1"}]},{"custom_field_id":"","values":[]}],"incident_timestamp_values":[{"incident_timestamp_id":" ","value":"2024-05-01T12:00:00Z"},{"incident_timestamp_id":""}]}""", request.body()
     );
   }
 
   @Test
   void retrospectiveOptionsOmitBlankMembers() {
     assertEquals("""
-        {"retrospective_incident_options":{"external_id":0}}""",
+        {"idempotency_key":"idem-1","visibility":"public","retrospective_incident_options":{"external_id":0}}""",
         CreateIncidentRequest.requestBuilder()
             .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(0L, null, " "))
+            .visibility("public")
+            .idempotencyKey("idem-1")
             .build().body()
     );
     assertEquals("""
-        {"retrospective_incident_options":{"postmortem_document_url":"https://docs.example.com/pm"}}""",
+        {"idempotency_key":"idem-1","visibility":"public","retrospective_incident_options":{"postmortem_document_url":"https://docs.example.com/pm"}}""",
         CreateIncidentRequest.requestBuilder()
             .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(
                 null, "https://docs.example.com/pm", null))
+            .visibility("public")
+            .idempotencyKey("idem-1")
             .build().body()
     );
     assertEquals("""
-        {"retrospective_incident_options":{"slack_channel_id":"C1"}}""",
+        {"idempotency_key":"idem-1","visibility":"public","retrospective_incident_options":{"slack_channel_id":"C1"}}""",
         CreateIncidentRequest.requestBuilder()
             .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(null, "", "C1"))
+            .visibility("public")
+            .idempotencyKey("idem-1")
             .build().body()
     );
     // options with nothing set are omitted entirely, as is a null options object
-    assertEquals("{}",
+    assertEquals("""
+        {"idempotency_key":"idem-1","visibility":"public"}""",
         CreateIncidentRequest.requestBuilder()
             .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(null, null, null))
+            .visibility("public")
+            .idempotencyKey("idem-1")
             .build().body()
     );
-    assertEquals("{}",
-        CreateIncidentRequest.requestBuilder().retrospectiveIncidentOptions(null).build().body()
+    assertEquals("""
+        {"idempotency_key":"idem-1","visibility":"public"}""",
+        CreateIncidentRequest.requestBuilder().retrospectiveIncidentOptions(null).visibility("public")
+        .idempotencyKey("idem-1")
+        .build().body()
     );
   }
 
@@ -352,8 +370,11 @@ final class CreateIncidentRequestTests {
         .incidentRoleAssignments(List.of())
         .customFieldValues(Map.of())
         .incidentTimestampValues(List.of())
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
-    assertEquals("{}", request.body());
+    assertEquals("""
+        {"idempotency_key":"idem-1","visibility":"public"}""", request.body());
   }
 
   @Test
@@ -363,11 +384,14 @@ final class CreateIncidentRequestTests {
         .customFieldValues(null)
         .incidentRoleAssignments(null)
         .incidentTimestampValues(null)
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals(List.of(), List.copyOf(request.customFieldEntries()));
     assertEquals(List.of(), List.copyOf(request.incidentRoleAssignments()));
     assertEquals(List.of(), List.copyOf(request.incidentTimestampValues()));
-    assertEquals("{}", request.body());
+    assertEquals("""
+        {"idempotency_key":"idem-1","visibility":"public"}""", request.body());
   }
 
   @Test
@@ -376,9 +400,11 @@ final class CreateIncidentRequestTests {
         .customFieldEntries(List.of(new CreateIncidentRequest.CustomFieldEntry(
             "cf-1", List.of(CreateIncidentRequest.CustomFieldValue.optionId("opt-1")))))
         .customFieldValues(Map.of("cf-2", "v-2"))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"custom_field_entries":[{"custom_field_id":"cf-2","values":[{"value_text":"v-2"}]}]}""", request.body()
+        {"idempotency_key":"idem-1","visibility":"public","custom_field_entries":[{"custom_field_id":"cf-2","values":[{"value_text":"v-2"}]}]}""", request.body()
     );
   }
 
@@ -392,11 +418,11 @@ final class CreateIncidentRequestTests {
         .customFieldValues(Map.of("k-1", "v-1"))
         .incidentTimestampValues(List.of(new CreateIncidentRequest.IncidentTimestampValue(
             "ts-1", OffsetDateTime.parse("2024-05-01T12:00:00Z"))))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"name":"name-1","incident_role_assignments":[{"incident_role_id":"r-1","assignee":{"id":"a-1"}}],\
-        "custom_field_entries":[{"custom_field_id":"k-1","values":[{"value_text":"v-1"}]}],\
-        "incident_timestamp_values":[{"incident_timestamp_id":"ts-1","value":"2024-05-01T12:00:00Z"}]}""",
+        {"idempotency_key":"idem-1","name":"name-1","incident_role_assignments":[{"incident_role_id":"r-1","assignee":{"id":"a-1"}}],"visibility":"public","custom_field_entries":[{"custom_field_id":"k-1","values":[{"value_text":"v-1"}]}],"incident_timestamp_values":[{"incident_timestamp_id":"ts-1","value":"2024-05-01T12:00:00Z"}]}""",
         request.body()
     );
   }
@@ -407,9 +433,11 @@ final class CreateIncidentRequestTests {
         .name("name-1")
         .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(
             -1L, null, null))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"name":"name-1","retrospective_incident_options":{"external_id":-1}}""", request.body()
+        {"idempotency_key":"idem-1","name":"name-1","visibility":"public","retrospective_incident_options":{"external_id":-1}}""", request.body()
     );
   }
 
@@ -424,9 +452,11 @@ final class CreateIncidentRequestTests {
         .incidentTimestampValues(List.of(new CreateIncidentRequest.IncidentTimestampValue("ts\"1", null)))
         .retrospectiveIncidentOptions(new CreateIncidentRequest.RetrospectiveIncidentOptions(
             null, "url\"1", "chan\ttab"))
+        .visibility("public")
+        .idempotencyKey("idem-1")
         .build();
     assertEquals("""
-        {"name":"na\\"me\\nline","summary":"sum\\\\mary\\tend","slack_channel_name_override":"chan\\"nel",\
+        {"idempotency_key":"idem-1","name":"na\\"me\\nline","summary":"sum\\\\mary\\tend","visibility":"public","slack_channel_name_override":"chan\\"nel",\
         "custom_field_entries":[{"custom_field_id":"cf\\"1","values":[{"value_text":"va\\nl"}]}],\
         "incident_timestamp_values":[{"incident_timestamp_id":"ts\\"1"}],\
         "retrospective_incident_options":{"postmortem_document_url":"url\\"1","slack_channel_id":"chan\\ttab"}}""",

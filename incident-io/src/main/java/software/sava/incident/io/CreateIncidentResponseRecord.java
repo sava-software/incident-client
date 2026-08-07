@@ -104,8 +104,8 @@ public record CreateIncidentResponseRecord(String callUrl,
         "aliases", "external_id", "id", "name"
     );
     private static final FieldMatcher DURATION_METRIC_ENTRY_FIELDS = FieldMatcher.of(
-      "duration_metric", "value_seconds", "status"
-  );
+        "duration_metric", "value_seconds", "status"
+    );
     private static final FieldMatcher ID_NAME_FIELDS = FieldMatcher.of("id", "name");
     private static final FieldMatcher EXTERNAL_ISSUE_FIELDS = FieldMatcher.of(
         "issue_name", "issue_permalink", "provider"
@@ -196,7 +196,11 @@ public record CreateIncidentResponseRecord(String callUrl,
         case 3 -> customFieldEntries = ji.readList(this::parseCustomFieldEntryV2);
         case 4 -> durationMetrics = ji.readList(this::parseDurationMetricV2);
         case 5 -> externalIssueReference = parseExternalIssueReferenceV2(ji);
-        case 6 -> hasDebrief = ji.readBoolean();
+        case 6 -> {
+          if (ji.notNull()) {
+            hasDebrief = ji.readBoolean();
+          }
+        }
         case 7 -> id = ji.readString();
         case 8 -> incidentRoleAssignments = ji.readList(this::parseIncidentRoleAssignmentV2);
         case 9 -> incidentStatus = parseIncidentStatusV2(ji);
@@ -215,10 +219,26 @@ public record CreateIncidentResponseRecord(String callUrl,
         case 22 -> summary = ji.readString();
         case 23 -> updatedAt = OffsetDateTime.parse(ji.readString());
         case 24 -> visibility = ji.applyChars(VISIBILITY_PARSER);
-        case 25 -> workloadMinutesLate = ji.readDouble();
-        case 26 -> workloadMinutesSleeping = ji.readDouble();
-        case 27 -> workloadMinutesTotal = ji.readDouble();
-        case 28 -> workloadMinutesWorking = ji.readDouble();
+        case 25 -> {
+          if (ji.notNull()) {
+            workloadMinutesLate = ji.readDouble();
+          }
+        }
+        case 26 -> {
+          if (ji.notNull()) {
+            workloadMinutesSleeping = ji.readDouble();
+          }
+        }
+        case 27 -> {
+          if (ji.notNull()) {
+            workloadMinutesTotal = ji.readDouble();
+          }
+        }
+        case 28 -> {
+          if (ji.notNull()) {
+            workloadMinutesWorking = ji.readDouble();
+          }
+        }
         default -> ji.skip();
       }
       return true;
@@ -406,7 +426,11 @@ public record CreateIncidentResponseRecord(String callUrl,
             p.id = metric.id;
             p.name = metric.name;
           }
-          case 1 -> p.value = ji1.readLong();
+          case 1 -> {
+            if (ji1.notNull()) {
+              p.value = ji1.readLong();
+            }
+          }
           case 2 -> p.status = ji1.readString();
           default -> ji1.skip();
         }
@@ -496,7 +520,7 @@ public record CreateIncidentResponseRecord(String callUrl,
           }
           case 1 -> ji1.testObject(VALUE_FIELDS, (valueField, ji2) -> {
             if (valueField == 0) {
-              p.value = OffsetDateTime.parse(ji2.readString());
+              p.value = ji2.readOrNull(j -> OffsetDateTime.parse(j.readString()));
             } else {
               ji2.skip();
             }

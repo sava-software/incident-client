@@ -11,7 +11,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /// Adapts an [IncidentIoClient] to the provider-neutral [IncidentClient].
@@ -67,9 +66,9 @@ public final class IncidentIoIncidentClient implements IncidentClient {
   }
 
   CreateIncidentRequest toRequest(final IncidentAlert alert) {
-    final var key = alert.key();
+    // a blank alert key falls through to build()'s random-UUID default
     final var builder = CreateIncidentRequest.requestBuilder()
-        .idempotencyKey(key == null || key.isBlank() ? UUID.randomUUID().toString() : key)
+        .idempotencyKey(alert.key())
         .name(alert.summary())
         .summary(summaryOf(alert))
         .severityId(severityIds.get(alert.severity()))

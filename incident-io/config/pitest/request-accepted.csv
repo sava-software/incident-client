@@ -1,0 +1,3 @@
+!sava-hardening-baseline-schema,1
+software.sava.incident.io.CreateIncidentRequestRecord,appendArray,ConditionalsBoundaryMutator,SURVIVED # leading-comma-guard # line 175
+software.sava.incident.io.CreateIncidentRequestRecord,body,ConditionalsBoundaryMutator,SURVIVED # leading-comma-guard # line 157
