@@ -1,5 +1,7 @@
 package software.sava.incident.core.api;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import software.sava.hardening.support.JulRecorder;
 
@@ -18,6 +20,8 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,6 +33,23 @@ final class IncidentServiceTests {
       .create();
 
   private static final String LOGGER_NAME = IncidentService.class.getPackageName();
+
+  private static final Logger RETRY_LOGGER = Logger.getLogger(LOGGER_NAME);
+  private static Level previousLevel;
+
+  @BeforeAll
+  static void silenceRetryLogging() {
+    // the retry path logs every failure at ERROR with its throwable, so exercising it
+    // prints stacktraces out of passing tests. JulRecorder re-enables the logger and
+    // detaches parent handlers for the tests that assert on these records.
+    previousLevel = RETRY_LOGGER.getLevel();
+    RETRY_LOGGER.setLevel(Level.OFF);
+  }
+
+  @AfterAll
+  static void restoreRetryLogging() {
+    RETRY_LOGGER.setLevel(previousLevel);
+  }
 
   private record TestHttpResponse(int statusCode) implements HttpResponse<Object> {
 
