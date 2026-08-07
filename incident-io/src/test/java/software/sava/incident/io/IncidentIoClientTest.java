@@ -213,7 +213,8 @@ final class IncidentIoClientTest {
                   "id": "01FCNDV6P870EA6S7TK1DSYD5H",
                   "name": "Lasted"
                 },
-                "value_seconds": 10800
+                "value_seconds": 10800,
+                "status": "success"
               }
             ],
             "external_issue_reference": {
@@ -344,6 +345,7 @@ final class IncidentIoClientTest {
     assertEquals("01FCNDV6P870EA6S7TK1DSYD5H", durationMetric.durationMetricId());
     assertEquals("Lasted", durationMetric.durationMetricName());
     assertEquals(10800L, durationMetric.valueSeconds());
+    assertEquals("success", durationMetric.status());
 
     assertNotNull(response.externalIssueReference());
     assertEquals("INC-123", response.externalIssueReference().issueName());

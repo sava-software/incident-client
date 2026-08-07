@@ -125,8 +125,14 @@ public interface CreateIncidentResponse {
   record EmbeddedCatalogEntryV2(Collection<String> aliases, String externalId, String id, String name) {
   }
 
+  /// An `IncidentDurationMetricWithValueV2`. `status` says whether `valueSeconds` still
+  /// matches the incident's current timestamps: only `success` means it does, and the other
+  /// documented values (`timestamps_missing`, `calculating`, `invalid_timestamps`) mean the
+  /// timestamps moved since it was computed. It is kept as a `String` rather than an enum so
+  /// a value upstream adds later is reported rather than silently read as null.
+  /// `valueSeconds` is absent when no value has ever been calculated.
   record IncidentDurationMetricWithValueV2(String durationMetricId, String durationMetricName,
-                                           Long valueSeconds) {
+                                           Long valueSeconds, String status) {
   }
 
   record ExternalIssueReferenceV2(String issueName, String issuePermalink, String provider) {

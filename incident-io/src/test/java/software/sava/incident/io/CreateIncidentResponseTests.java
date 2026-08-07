@@ -46,6 +46,7 @@ final class CreateIncidentResponseTests {
             {
               "duration_metric": {"id": "dm-1", "name": "Time to Resolve", "unknown": "x"},
               "value_seconds": 3600,
+              "status": "timestamps_missing",
               "unknown": {}
             }
           ],
@@ -159,6 +160,9 @@ final class CreateIncidentResponseTests {
     assertEquals("dm-1", durationMetric.durationMetricId());
     assertEquals("Time to Resolve", durationMetric.durationMetricName());
     assertEquals(3600L, durationMetric.valueSeconds());
+    // status is spec-required and says whether valueSeconds still matches the incident's
+    // timestamps; anything but "success" means the value is stale
+    assertEquals("timestamps_missing", durationMetric.status());
 
     final var externalIssueReference = response.externalIssueReference();
     assertEquals("Issue Title", externalIssueReference.issueName());

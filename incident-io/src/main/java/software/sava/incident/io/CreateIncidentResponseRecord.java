@@ -103,7 +103,9 @@ public record CreateIncidentResponseRecord(String callUrl,
     private static final FieldMatcher CATALOG_ENTRY_FIELDS = FieldMatcher.of(
         "aliases", "external_id", "id", "name"
     );
-    private static final FieldMatcher DURATION_METRIC_ENTRY_FIELDS = FieldMatcher.of("duration_metric", "value_seconds");
+    private static final FieldMatcher DURATION_METRIC_ENTRY_FIELDS = FieldMatcher.of(
+      "duration_metric", "value_seconds", "status"
+  );
     private static final FieldMatcher ID_NAME_FIELDS = FieldMatcher.of("id", "name");
     private static final FieldMatcher EXTERNAL_ISSUE_FIELDS = FieldMatcher.of(
         "issue_name", "issue_permalink", "provider"
@@ -394,7 +396,7 @@ public record CreateIncidentResponseRecord(String callUrl,
 
     private IncidentDurationMetricWithValueV2 parseDurationMetricV2(final JsonIterator ji) {
       final var p = new Object() {
-        String id, name;
+        String id, name, status;
         Long value;
       };
       ji.testObject(DURATION_METRIC_ENTRY_FIELDS, (field, ji1) -> {
@@ -405,11 +407,12 @@ public record CreateIncidentResponseRecord(String callUrl,
             p.name = metric.name;
           }
           case 1 -> p.value = ji1.readLong();
+          case 2 -> p.status = ji1.readString();
           default -> ji1.skip();
         }
         return true;
       });
-      return new IncidentDurationMetricWithValueV2(p.id, p.name, p.value);
+      return new IncidentDurationMetricWithValueV2(p.id, p.name, p.value, p.status);
     }
 
     private ExternalIssueReferenceV2 parseExternalIssueReferenceV2(final JsonIterator ji) {
