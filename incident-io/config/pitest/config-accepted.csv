@@ -1,2 +1,2 @@
 !sava-hardening-baseline-schema,1
-software.sava.incident.io.config.IncidentIoConfig$Parser,test,BooleanTrueReturnValsMutator,SURVIVED # always-true-delegate # line 206
+software.sava.incident.io.config.IncidentIoConfig$Parser,test,BooleanTrueReturnValsMutator,SURVIVED # always-true-delegate # line 219

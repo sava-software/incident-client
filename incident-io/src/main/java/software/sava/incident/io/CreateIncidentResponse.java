@@ -29,7 +29,11 @@ public interface CreateIncidentResponse {
 
   IncidentTypeV2 incidentType();
 
+  OffsetDateTime lastActivityAt();
+
   Mode mode();
+
+  String msTeamsChannelUrl();
 
   String name();
 
@@ -47,9 +51,13 @@ public interface CreateIncidentResponse {
 
   String slackChannelName();
 
+  String slackChannelUrl();
+
   String slackTeamId();
 
   String summary();
+
+  Collection<String> teamIds();
 
   OffsetDateTime updatedAt();
 
@@ -101,10 +109,13 @@ public interface CreateIncidentResponse {
 
   /// A `CustomFieldEntryV2`, flattened: the nested `custom_field` type info is inlined as
   /// the `customField*` components, and `values` holds every value the field carries — a
-  /// `multi_select` has one per selected option.
+  /// `multi_select` has one per selected option. `customFieldOptions` is the field's whole
+  /// configured option set, which is not the same as the selected `values`.
   record CustomFieldEntryV2(String customFieldId,
                             String customFieldName,
                             String customFieldType,
+                            String customFieldDescription,
+                            Collection<CustomFieldOptionV2> customFieldOptions,
                             Collection<CustomFieldValueV2> values) {
   }
 
@@ -141,18 +152,58 @@ public interface CreateIncidentResponse {
   record IncidentRoleAssignmentV2(UserV2 assignee, IncidentRoleV2 role) {
   }
 
-  record IncidentRoleV2(String id, String name, String description, String roleType) {
+  /// An `EmbeddedIncidentRoleV2`. `roleType` is one of `lead`, `reporter` or `custom`, and
+  /// `required` is the only optional member — it reads false when the response omits it.
+  record IncidentRoleV2(String id,
+                        String name,
+                        String description,
+                        String roleType,
+                        OffsetDateTime createdAt,
+                        String instructions,
+                        boolean required,
+                        String shortform,
+                        OffsetDateTime updatedAt) {
   }
 
-  record IncidentStatusV2(String id, String name, String description, String category) {
+  /// An `IncidentStatusV2`. `category` is one of `triage`, `declined`, `merged`,
+  /// `canceled`, `live`, `learning`, `closed` or `paused`; `rank` orders statuses within
+  /// their category.
+  record IncidentStatusV2(String id,
+                          String name,
+                          String description,
+                          String category,
+                          OffsetDateTime createdAt,
+                          long rank,
+                          OffsetDateTime updatedAt) {
   }
 
-  record IncidentTimestampWithValueV2(String timestampId, String timestampName, OffsetDateTime value) {
+  /// An `IncidentTimestampWithValueV2`, flattened: the nested `incident_timestamp` is
+  /// inlined as the `timestamp*` components. `value` is absent until the timestamp is set.
+  record IncidentTimestampWithValueV2(String timestampId,
+                                      String timestampName,
+                                      long timestampRank,
+                                      OffsetDateTime value) {
   }
 
-  record IncidentTypeV2(String id, String name, String description) {
+  /// An `IncidentTypeV2`. `createInTriage` is `always` or `optional` — kept as a `String`
+  /// rather than an enum so a value upstream adds later is reported rather than silently
+  /// read as null.
+  record IncidentTypeV2(String id,
+                        String name,
+                        String description,
+                        String createInTriage,
+                        OffsetDateTime createdAt,
+                        boolean isDefault,
+                        boolean privateIncidentsOnly,
+                        OffsetDateTime updatedAt) {
   }
 
-  record SeverityV2(String id, String name, String description) {
+  /// A `SeverityV2`. `rank` orders severities against each other.
+  record SeverityV2(String id,
+                    String name,
+                    String description,
+                    OffsetDateTime createdAt,
+                    long rank,
+                    OffsetDateTime updatedAt) {
   }
 }

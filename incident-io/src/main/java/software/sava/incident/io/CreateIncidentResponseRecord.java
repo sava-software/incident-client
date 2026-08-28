@@ -21,7 +21,9 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            IncidentStatusV2 incidentStatus,
                                            Collection<IncidentTimestampWithValueV2> incidentTimestampValues,
                                            IncidentTypeV2 incidentType,
+                                           OffsetDateTime lastActivityAt,
                                            Mode mode,
+                                           String msTeamsChannelUrl,
                                            String name,
                                            String permalink,
                                            Collection<String> postmortemDocumentIds,
@@ -30,8 +32,10 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            SeverityV2 severity,
                                            String slackChannelId,
                                            String slackChannelName,
+                                           String slackChannelUrl,
                                            String slackTeamId,
                                            String summary,
+                                           Collection<String> teamIds,
                                            OffsetDateTime updatedAt,
                                            Visibility visibility,
                                            Double workloadMinutesLate,
@@ -69,7 +73,9 @@ public record CreateIncidentResponseRecord(String callUrl,
         "incident_status",
         "incident_timestamp_values",
         "incident_type",
+        "last_activity_at",
         "mode",
+        "ms_teams_channel_url",
         "name",
         "permalink",
         "postmortem_document_ids",
@@ -78,8 +84,10 @@ public record CreateIncidentResponseRecord(String callUrl,
         "severity",
         "slack_channel_id",
         "slack_channel_name",
+        "slack_channel_url",
         "slack_team_id",
         "summary",
+        "team_ids",
         "updated_at",
         "visibility",
         "workload_minutes_late",
@@ -93,7 +101,9 @@ public record CreateIncidentResponseRecord(String callUrl,
     private static final FieldMatcher USER_FIELDS = FieldMatcher.of("email", "id", "name", "role", "slack_user_id");
     private static final FieldMatcher ID_TITLE_FIELDS = FieldMatcher.of("id", "title");
     private static final FieldMatcher CUSTOM_FIELD_ENTRY_FIELDS = FieldMatcher.of("custom_field", "values");
-    private static final FieldMatcher CUSTOM_FIELD_FIELDS = FieldMatcher.of("id", "name", "field_type");
+    private static final FieldMatcher CUSTOM_FIELD_FIELDS = FieldMatcher.of(
+        "id", "name", "field_type", "description", "options"
+    );
     private static final FieldMatcher CUSTOM_FIELD_VALUE_FIELDS = FieldMatcher.of(
         "value_catalog_entry", "value_link", "value_numeric", "value_option", "value_text"
     );
@@ -111,9 +121,21 @@ public record CreateIncidentResponseRecord(String callUrl,
         "issue_name", "issue_permalink", "provider"
     );
     private static final FieldMatcher ROLE_ASSIGNMENT_FIELDS = FieldMatcher.of("assignee", "role");
-    private static final FieldMatcher ROLE_FIELDS = FieldMatcher.of("id", "name", "description", "role_type");
-    private static final FieldMatcher STATUS_FIELDS = FieldMatcher.of("id", "name", "description", "category");
-    private static final FieldMatcher ID_NAME_DESCRIPTION_FIELDS = FieldMatcher.of("id", "name", "description");
+    private static final FieldMatcher ROLE_FIELDS = FieldMatcher.of(
+        "id", "name", "description", "role_type",
+        "created_at", "instructions", "required", "shortform", "updated_at"
+    );
+    private static final FieldMatcher STATUS_FIELDS = FieldMatcher.of(
+        "id", "name", "description", "category", "created_at", "rank", "updated_at"
+    );
+    private static final FieldMatcher INCIDENT_TYPE_FIELDS = FieldMatcher.of(
+        "id", "name", "description",
+        "create_in_triage", "created_at", "is_default", "private_incidents_only", "updated_at"
+    );
+    private static final FieldMatcher SEVERITY_FIELDS = FieldMatcher.of(
+        "id", "name", "description", "created_at", "rank", "updated_at"
+    );
+    private static final FieldMatcher TIMESTAMP_FIELDS = FieldMatcher.of("id", "name", "rank");
     private static final FieldMatcher TIMESTAMP_ENTRY_FIELDS = FieldMatcher.of("incident_timestamp", "value");
     private static final FieldMatcher VALUE_FIELDS = FieldMatcher.of("value");
 
@@ -135,7 +157,9 @@ public record CreateIncidentResponseRecord(String callUrl,
     private IncidentStatusV2 incidentStatus;
     private Collection<IncidentTimestampWithValueV2> incidentTimestampValues;
     private IncidentTypeV2 incidentType;
+    private OffsetDateTime lastActivityAt;
     private Mode mode;
+    private String msTeamsChannelUrl;
     private String name;
     private String permalink;
     private Collection<String> postmortemDocumentIds;
@@ -144,8 +168,10 @@ public record CreateIncidentResponseRecord(String callUrl,
     private SeverityV2 severity;
     private String slackChannelId;
     private String slackChannelName;
+    private String slackChannelUrl;
     private String slackTeamId;
     private String summary;
+    private Collection<String> teamIds;
     private OffsetDateTime updatedAt;
     private Visibility visibility;
     private Double workloadMinutesLate;
@@ -167,7 +193,9 @@ public record CreateIncidentResponseRecord(String callUrl,
           incidentStatus,
           incidentTimestampValues == null ? List.of() : incidentTimestampValues,
           incidentType,
+          lastActivityAt,
           mode,
+          msTeamsChannelUrl,
           name,
           permalink,
           postmortemDocumentIds == null ? List.of() : postmortemDocumentIds,
@@ -176,8 +204,10 @@ public record CreateIncidentResponseRecord(String callUrl,
           severity,
           slackChannelId,
           slackChannelName,
+          slackChannelUrl,
           slackTeamId,
           summary,
+          teamIds == null ? List.of() : teamIds,
           updatedAt,
           visibility,
           workloadMinutesLate,
@@ -206,35 +236,39 @@ public record CreateIncidentResponseRecord(String callUrl,
         case 9 -> incidentStatus = parseIncidentStatusV2(ji);
         case 10 -> incidentTimestampValues = ji.readList(this::parseIncidentTimestampWithValueV2);
         case 11 -> incidentType = parseIncidentTypeV2(ji);
-        case 12 -> mode = ji.applyChars(MODE_PARSER);
-        case 13 -> name = ji.readString();
-        case 14 -> permalink = ji.readString();
-        case 15 -> postmortemDocumentIds = ji.readList(JsonIterator::readString);
-        case 16 -> postmortemDocumentUrl = ji.readString();
-        case 17 -> reference = ji.readString();
-        case 18 -> severity = parseSeverityV2(ji);
-        case 19 -> slackChannelId = ji.readString();
-        case 20 -> slackChannelName = ji.readString();
-        case 21 -> slackTeamId = ji.readString();
-        case 22 -> summary = ji.readString();
-        case 23 -> updatedAt = OffsetDateTime.parse(ji.readString());
-        case 24 -> visibility = ji.applyChars(VISIBILITY_PARSER);
-        case 25 -> {
+        case 12 -> lastActivityAt = OffsetDateTime.parse(ji.readString());
+        case 13 -> mode = ji.applyChars(MODE_PARSER);
+        case 14 -> msTeamsChannelUrl = ji.readString();
+        case 15 -> name = ji.readString();
+        case 16 -> permalink = ji.readString();
+        case 17 -> postmortemDocumentIds = ji.readList(JsonIterator::readString);
+        case 18 -> postmortemDocumentUrl = ji.readString();
+        case 19 -> reference = ji.readString();
+        case 20 -> severity = parseSeverityV2(ji);
+        case 21 -> slackChannelId = ji.readString();
+        case 22 -> slackChannelName = ji.readString();
+        case 23 -> slackChannelUrl = ji.readString();
+        case 24 -> slackTeamId = ji.readString();
+        case 25 -> summary = ji.readString();
+        case 26 -> teamIds = ji.readList(JsonIterator::readString);
+        case 27 -> updatedAt = OffsetDateTime.parse(ji.readString());
+        case 28 -> visibility = ji.applyChars(VISIBILITY_PARSER);
+        case 29 -> {
           if (ji.notNull()) {
             workloadMinutesLate = ji.readDouble();
           }
         }
-        case 26 -> {
+        case 30 -> {
           if (ji.notNull()) {
             workloadMinutesSleeping = ji.readDouble();
           }
         }
-        case 27 -> {
+        case 31 -> {
           if (ji.notNull()) {
             workloadMinutesTotal = ji.readDouble();
           }
         }
-        case 28 -> {
+        case 32 -> {
           if (ji.notNull()) {
             workloadMinutesWorking = ji.readDouble();
           }
@@ -326,7 +360,8 @@ public record CreateIncidentResponseRecord(String callUrl,
 
     private CustomFieldEntryV2 parseCustomFieldEntryV2(final JsonIterator ji) {
       final var p = new Object() {
-        String customFieldId, customFieldName, customFieldType;
+        String customFieldId, customFieldName, customFieldType, customFieldDescription;
+        Collection<CustomFieldOptionV2> customFieldOptions;
         Collection<CustomFieldValueV2> values;
       };
       ji.testObject(CUSTOM_FIELD_ENTRY_FIELDS, (field, ji1) -> {
@@ -336,6 +371,9 @@ public record CreateIncidentResponseRecord(String callUrl,
               case 0 -> p.customFieldId = ji2.readString();
               case 1 -> p.customFieldName = ji2.readString();
               case 2 -> p.customFieldType = ji2.readString();
+              case 3 -> p.customFieldDescription = ji2.readString();
+              // the field's configured options, not the selected values
+              case 4 -> p.customFieldOptions = ji2.readList(this::parseCustomFieldOptionV2);
               default -> ji2.skip();
             }
             return true;
@@ -350,6 +388,8 @@ public record CreateIncidentResponseRecord(String callUrl,
           p.customFieldId,
           p.customFieldName,
           p.customFieldType,
+          p.customFieldDescription,
+          p.customFieldOptions == null ? List.of() : p.customFieldOptions,
           p.values == null ? List.of() : p.values
       );
     }
@@ -474,7 +514,9 @@ public record CreateIncidentResponseRecord(String callUrl,
 
     private IncidentRoleV2 parseIncidentRoleV2(final JsonIterator ji) {
       final var p = new Object() {
-        String id, name, description, roleType;
+        String id, name, description, roleType, instructions, shortform;
+        OffsetDateTime createdAt, updatedAt;
+        boolean required;
       };
       ji.testObject(ROLE_FIELDS, (field, ji1) -> {
         switch (field) {
@@ -482,16 +524,30 @@ public record CreateIncidentResponseRecord(String callUrl,
           case 1 -> p.name = ji1.readString();
           case 2 -> p.description = ji1.readString();
           case 3 -> p.roleType = ji1.readString();
+          case 4 -> p.createdAt = OffsetDateTime.parse(ji1.readString());
+          case 5 -> p.instructions = ji1.readString();
+          case 6 -> {
+            if (ji1.notNull()) {
+              p.required = ji1.readBoolean();
+            }
+          }
+          case 7 -> p.shortform = ji1.readString();
+          case 8 -> p.updatedAt = OffsetDateTime.parse(ji1.readString());
           default -> ji1.skip();
         }
         return true;
       });
-      return new IncidentRoleV2(p.id, p.name, p.description, p.roleType);
+      return new IncidentRoleV2(
+          p.id, p.name, p.description, p.roleType,
+          p.createdAt, p.instructions, p.required, p.shortform, p.updatedAt
+      );
     }
 
     private IncidentStatusV2 parseIncidentStatusV2(final JsonIterator ji) {
       final var p = new Object() {
         String id, name, description, category;
+        OffsetDateTime createdAt, updatedAt;
+        long rank;
       };
       ji.testObject(STATUS_FIELDS, (field, ji1) -> {
         switch (field) {
@@ -499,25 +555,35 @@ public record CreateIncidentResponseRecord(String callUrl,
           case 1 -> p.name = ji1.readString();
           case 2 -> p.description = ji1.readString();
           case 3 -> p.category = ji1.readString();
+          case 4 -> p.createdAt = OffsetDateTime.parse(ji1.readString());
+          case 5 -> p.rank = ji1.readLong();
+          case 6 -> p.updatedAt = OffsetDateTime.parse(ji1.readString());
           default -> ji1.skip();
         }
         return true;
       });
-      return new IncidentStatusV2(p.id, p.name, p.description, p.category);
+      return new IncidentStatusV2(
+          p.id, p.name, p.description, p.category, p.createdAt, p.rank, p.updatedAt
+      );
     }
 
     private IncidentTimestampWithValueV2 parseIncidentTimestampWithValueV2(final JsonIterator ji) {
       final var p = new Object() {
         String id, name;
         OffsetDateTime value;
+        long rank;
       };
       ji.testObject(TIMESTAMP_ENTRY_FIELDS, (field, ji1) -> {
         switch (field) {
-          case 0 -> {
-            final var timestamp = parseIdName(ji1);
-            p.id = timestamp.id;
-            p.name = timestamp.name;
-          }
+          case 0 -> ji1.testObject(TIMESTAMP_FIELDS, (timestampField, ji2) -> {
+            switch (timestampField) {
+              case 0 -> p.id = ji2.readString();
+              case 1 -> p.name = ji2.readString();
+              case 2 -> p.rank = ji2.readLong();
+              default -> ji2.skip();
+            }
+            return true;
+          });
           case 1 -> ji1.testObject(VALUE_FIELDS, (valueField, ji2) -> {
             if (valueField == 0) {
               p.value = ji2.readOrNull(j -> OffsetDateTime.parse(j.readString()));
@@ -530,39 +596,54 @@ public record CreateIncidentResponseRecord(String callUrl,
         }
         return true;
       });
-      return new IncidentTimestampWithValueV2(p.id, p.name, p.value);
+      return new IncidentTimestampWithValueV2(p.id, p.name, p.rank, p.value);
     }
 
     private IncidentTypeV2 parseIncidentTypeV2(final JsonIterator ji) {
       final var p = new Object() {
-        String id, name, description;
+        String id, name, description, createInTriage;
+        OffsetDateTime createdAt, updatedAt;
+        boolean isDefault, privateIncidentsOnly;
       };
-      ji.testObject(ID_NAME_DESCRIPTION_FIELDS, (field, ji1) -> {
+      ji.testObject(INCIDENT_TYPE_FIELDS, (field, ji1) -> {
         switch (field) {
           case 0 -> p.id = ji1.readString();
           case 1 -> p.name = ji1.readString();
           case 2 -> p.description = ji1.readString();
+          case 3 -> p.createInTriage = ji1.readString();
+          case 4 -> p.createdAt = OffsetDateTime.parse(ji1.readString());
+          case 5 -> p.isDefault = ji1.readBoolean();
+          case 6 -> p.privateIncidentsOnly = ji1.readBoolean();
+          case 7 -> p.updatedAt = OffsetDateTime.parse(ji1.readString());
           default -> ji1.skip();
         }
         return true;
       });
-      return new IncidentTypeV2(p.id, p.name, p.description);
+      return new IncidentTypeV2(
+          p.id, p.name, p.description, p.createInTriage,
+          p.createdAt, p.isDefault, p.privateIncidentsOnly, p.updatedAt
+      );
     }
 
     private SeverityV2 parseSeverityV2(final JsonIterator ji) {
       final var p = new Object() {
         String id, name, description;
+        OffsetDateTime createdAt, updatedAt;
+        long rank;
       };
-      ji.testObject(ID_NAME_DESCRIPTION_FIELDS, (field, ji1) -> {
+      ji.testObject(SEVERITY_FIELDS, (field, ji1) -> {
         switch (field) {
           case 0 -> p.id = ji1.readString();
           case 1 -> p.name = ji1.readString();
           case 2 -> p.description = ji1.readString();
+          case 3 -> p.createdAt = OffsetDateTime.parse(ji1.readString());
+          case 4 -> p.rank = ji1.readLong();
+          case 5 -> p.updatedAt = OffsetDateTime.parse(ji1.readString());
           default -> ji1.skip();
         }
         return true;
       });
-      return new SeverityV2(p.id, p.name, p.description);
+      return new SeverityV2(p.id, p.name, p.description, p.createdAt, p.rank, p.updatedAt);
     }
   }
 }

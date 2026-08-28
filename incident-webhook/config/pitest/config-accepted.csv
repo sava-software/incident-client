@@ -1,2 +1,2 @@
 !sava-hardening-baseline-schema,1
-software.sava.incident.webhook.config.WebhookConfig$Parser,test,BooleanTrueReturnValsMutator,SURVIVED # always-true-delegate # line 183
+software.sava.incident.webhook.config.WebhookConfig$Parser,test,BooleanTrueReturnValsMutator,SURVIVED # always-true-delegate # line 181

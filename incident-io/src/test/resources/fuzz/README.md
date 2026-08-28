@@ -23,7 +23,13 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
 - `full.json` — a complete `IncidentV2` response body: all four `ActorV2` creator
   variants, a custom-field entry carrying every `CustomFieldValueV2` shape
   (option, catalog entry with aliases, link, numeric, text), a `UserV2` role
-  assignee, duration metrics, timestamps, and postmortem document ids. The
-  nested object/array structure would take a from-scratch mutator a long time to
-  assemble, which is what makes this corpus worth committing beyond regression
-  duty.
+  assignee, duration metrics, timestamps, postmortem document ids, and team ids.
+  The nested object/array structure would take a from-scratch mutator a long time
+  to assemble, which is what makes this corpus worth committing beyond regression
+  duty. Extended 2026-08-28 with the `IncidentV2` fields incident.io added that
+  day — `last_activity_at`, `team_ids`, `ms_teams_channel_url` and
+  `slack_channel_url` — and, in the same pass, with the previously narrowed
+  members of the nested records (`CustomFieldTypeInfoV2` description/options,
+  and the timestamps, ranks and flags on the status, severity, type, role and
+  incident-timestamp records), so the bootstrap body is now the full upstream
+  shape rather than the subset this client used to model.

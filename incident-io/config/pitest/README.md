@@ -71,7 +71,7 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   sub-200 status line would hang until the request timeout, and a flaky harness is worse
   than recorded debt. The `>= 300` arm is pinned by the 300/400/503 wire tests. Mirrors
   the same acceptance in `incident-webhook` and `incident-pagerduty`.
-- `# always-true-delegate` (config: `IncidentIoConfig$Parser.test:85`) —
+- `# always-true-delegate` (config: `IncidentIoConfig$Parser.test:219`) —
   `return super.test(...)` where the superclass either returns true or
   throws on unknown fields; the mutated constant-true return preserves the
   call and its side effects, so no input can distinguish it. Escape hatch:

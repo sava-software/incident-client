@@ -108,7 +108,7 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   content-equal and equally immutable list. The mutable-escape direction (`ORDER_ELSE`,
   multi-entry as-is) is killed by the error-list immutability assertions. Mirrors the same
   acceptance on `incident-io`'s `IncidentIoRequestException$Parser.create`.
-- `# always-true-delegate` (config: `PagerDutyConfig$Parser.test:99`) —
+- `# always-true-delegate` (config: `PagerDutyConfig$Parser.test:97`) —
   `return super.test(...)` where the superclass either returns true or
   throws on unknown fields; the constant-true mutant preserves the call and
   its side effects. Mirrors the same acceptance in incident-io.

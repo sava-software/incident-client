@@ -33,6 +33,11 @@ final class CreateIncidentResponseTests {
                 "id": "cf-1",
                 "name": "Affected Team",
                 "field_type": "single_select",
+                "description": "Which team owns this",
+                "options": [
+                  {"custom_field_id": "cf-1", "id": "opt-1", "sort_key": 10, "value": "Payments"},
+                  {"custom_field_id": "cf-1", "id": "opt-2", "sort_key": 20, "value": "Platform"}
+                ],
                 "unknown": null
               },
               "values": [
@@ -73,6 +78,11 @@ final class CreateIncidentResponseTests {
                 "name": "Incident Lead",
                 "description": "Leads the incident",
                 "role_type": "lead",
+                "created_at": "2024-04-01T09:00:00Z",
+                "instructions": "Coordinate the response",
+                "required": true,
+                "shortform": "lead",
+                "updated_at": "2024-04-02T09:00:00Z",
                 "unknown": 2
               },
               "unknown": "w"
@@ -83,11 +93,14 @@ final class CreateIncidentResponseTests {
             "name": "Investigating",
             "description": "We are investigating",
             "category": "live",
+            "created_at": "2024-04-03T09:00:00Z",
+            "rank": 3,
+            "updated_at": "2024-04-04T09:00:00Z",
             "unknown": false
           },
           "incident_timestamp_values": [
             {
-              "incident_timestamp": {"id": "ts-1", "name": "Reported At", "unknown": "v"},
+              "incident_timestamp": {"id": "ts-1", "name": "Reported At", "rank": 7, "unknown": "v"},
               "value": {"value": "2024-05-01T12:00:00Z", "unknown": "u"},
               "unknown": "t"
             }
@@ -96,9 +109,16 @@ final class CreateIncidentResponseTests {
             "id": "type-1",
             "name": "Default",
             "description": "Default type",
+            "create_in_triage": "always",
+            "created_at": "2024-04-05T09:00:00Z",
+            "is_default": true,
+            "private_incidents_only": false,
+            "updated_at": "2024-04-06T09:00:00Z",
             "unknown": "s"
           },
+          "last_activity_at": "2024-05-01T13:40:00Z",
           "mode": "standard",
+          "ms_teams_channel_url": "https://teams.microsoft.com/l/channel/19%3Aabc%40thread.tacv2/inc-123",
           "name": "Incident Name",
           "permalink": "https://app.incident.io/incidents/1",
           "postmortem_document_ids": ["pm-1", "pm-2"],
@@ -108,12 +128,17 @@ final class CreateIncidentResponseTests {
             "id": "sev-1",
             "name": "Major",
             "description": "Major severity",
+            "created_at": "2024-04-07T09:00:00Z",
+            "rank": 2,
+            "updated_at": "2024-04-08T09:00:00Z",
             "unknown": "r"
           },
           "slack_channel_id": "C123",
           "slack_channel_name": "#inc-123",
+          "slack_channel_url": "https://slack.com/app_redirect?team=T123&channel=C123",
           "slack_team_id": "T123",
           "summary": "Incident Summary",
+          "team_ids": ["team-1", "team-2"],
           "updated_at": "2024-05-01T13:45:00Z",
           "visibility": "public",
           "workload_minutes_late": 1.5,
@@ -148,6 +173,15 @@ final class CreateIncidentResponseTests {
     assertEquals("cf-1", customFieldEntry.customFieldId());
     assertEquals("Affected Team", customFieldEntry.customFieldName());
     assertEquals("single_select", customFieldEntry.customFieldType());
+    assertEquals("Which team owns this", customFieldEntry.customFieldDescription());
+    // the field's configured options are its whole option set, not the selected values
+    final var options = List.copyOf(customFieldEntry.customFieldOptions());
+    assertEquals(2, options.size());
+    assertEquals("opt-1", options.getFirst().id());
+    assertEquals(10L, options.getFirst().sortKey());
+    assertEquals("Payments", options.getFirst().value());
+    assertEquals("opt-2", options.get(1).id());
+    assertEquals(20L, options.get(1).sortKey());
     // every value is kept, not just the first
     final var values = List.copyOf(customFieldEntry.values());
     assertEquals(2, values.size());
@@ -184,26 +218,43 @@ final class CreateIncidentResponseTests {
     assertEquals("Incident Lead", roleAssignment.role().name());
     assertEquals("Leads the incident", roleAssignment.role().description());
     assertEquals("lead", roleAssignment.role().roleType());
+    assertEquals(OffsetDateTime.parse("2024-04-01T09:00:00Z"), roleAssignment.role().createdAt());
+    assertEquals("Coordinate the response", roleAssignment.role().instructions());
+    assertTrue(roleAssignment.role().required());
+    assertEquals("lead", roleAssignment.role().shortform());
+    assertEquals(OffsetDateTime.parse("2024-04-02T09:00:00Z"), roleAssignment.role().updatedAt());
 
     final var incidentStatus = response.incidentStatus();
     assertEquals("status-1", incidentStatus.id());
     assertEquals("Investigating", incidentStatus.name());
     assertEquals("We are investigating", incidentStatus.description());
     assertEquals("live", incidentStatus.category());
+    assertEquals(OffsetDateTime.parse("2024-04-03T09:00:00Z"), incidentStatus.createdAt());
+    assertEquals(3L, incidentStatus.rank());
+    assertEquals(OffsetDateTime.parse("2024-04-04T09:00:00Z"), incidentStatus.updatedAt());
 
     final var timestampValues = List.copyOf(response.incidentTimestampValues());
     assertEquals(1, timestampValues.size());
     final var timestampValue = timestampValues.getFirst();
     assertEquals("ts-1", timestampValue.timestampId());
     assertEquals("Reported At", timestampValue.timestampName());
+    assertEquals(7L, timestampValue.timestampRank());
     assertEquals(OffsetDateTime.parse("2024-05-01T12:00:00Z"), timestampValue.value());
 
     final var incidentType = response.incidentType();
     assertEquals("type-1", incidentType.id());
     assertEquals("Default", incidentType.name());
     assertEquals("Default type", incidentType.description());
+    assertEquals("always", incidentType.createInTriage());
+    assertEquals(OffsetDateTime.parse("2024-04-05T09:00:00Z"), incidentType.createdAt());
+    assertTrue(incidentType.isDefault());
+    assertFalse(incidentType.privateIncidentsOnly());
+    assertEquals(OffsetDateTime.parse("2024-04-06T09:00:00Z"), incidentType.updatedAt());
 
+    assertEquals(OffsetDateTime.parse("2024-05-01T13:40:00Z"), response.lastActivityAt());
     assertEquals(CreateIncidentResponse.Mode.standard, response.mode());
+    assertEquals("https://teams.microsoft.com/l/channel/19%3Aabc%40thread.tacv2/inc-123",
+        response.msTeamsChannelUrl());
     assertEquals("Incident Name", response.name());
     assertEquals("https://app.incident.io/incidents/1", response.permalink());
     assertEquals(List.of("pm-1", "pm-2"), List.copyOf(response.postmortemDocumentIds()));
@@ -214,11 +265,16 @@ final class CreateIncidentResponseTests {
     assertEquals("sev-1", severity.id());
     assertEquals("Major", severity.name());
     assertEquals("Major severity", severity.description());
+    assertEquals(OffsetDateTime.parse("2024-04-07T09:00:00Z"), severity.createdAt());
+    assertEquals(2L, severity.rank());
+    assertEquals(OffsetDateTime.parse("2024-04-08T09:00:00Z"), severity.updatedAt());
 
     assertEquals("C123", response.slackChannelId());
     assertEquals("#inc-123", response.slackChannelName());
+    assertEquals("https://slack.com/app_redirect?team=T123&channel=C123", response.slackChannelUrl());
     assertEquals("T123", response.slackTeamId());
     assertEquals("Incident Summary", response.summary());
+    assertEquals(List.of("team-1", "team-2"), List.copyOf(response.teamIds()));
     assertEquals(OffsetDateTime.parse("2024-05-01T13:45:00Z"), response.updatedAt());
     assertEquals(CreateIncidentResponse.Visibility.PUBLIC, response.visibility());
     assertEquals(1.5, response.workloadMinutesLate());
@@ -244,7 +300,9 @@ final class CreateIncidentResponseTests {
     assertNull(response.incidentStatus());
     assertEquals(List.of(), response.incidentTimestampValues());
     assertNull(response.incidentType());
+    assertNull(response.lastActivityAt());
     assertNull(response.mode());
+    assertNull(response.msTeamsChannelUrl());
     assertNull(response.name());
     assertNull(response.permalink());
     assertEquals(List.of(), response.postmortemDocumentIds());
@@ -253,8 +311,10 @@ final class CreateIncidentResponseTests {
     assertNull(response.severity());
     assertNull(response.slackChannelId());
     assertNull(response.slackChannelName());
+    assertNull(response.slackChannelUrl());
     assertNull(response.slackTeamId());
     assertNull(response.summary());
+    assertEquals(List.of(), response.teamIds());
     assertNull(response.updatedAt());
     assertNull(response.visibility());
     assertNull(response.workloadMinutesLate());
@@ -374,6 +434,7 @@ final class CreateIncidentResponseTests {
     final var entries = List.copyOf(response.customFieldEntries());
     assertEquals(1, entries.size());
     assertEquals("cf-5", entries.getFirst().customFieldId());
+    assertEquals(List.of(), List.copyOf(entries.getFirst().customFieldOptions()));
     assertEquals(List.of(), List.copyOf(entries.getFirst().values()));
     assertEquals("after", response.name());
   }
@@ -419,6 +480,43 @@ final class CreateIncidentResponseTests {
     assertEquals("after", response.name());
   }
 
+  /// `team_ids` is spec-required, but documented as empty when no team matches — an
+  /// empty array is a normal response, not a missing field, and it is a different path
+  /// from an absent key: the accumulator is allocated rather than defaulted.
+  @Test
+  void parseEmptyTeamIds() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"team_ids":[],"name":"after"}}"""));
+    assertEquals(List.of(), List.copyOf(response.teamIds()));
+    assertEquals("after", response.name());
+  }
+
+  /// Every nested boolean flag needs both polarities observed: a mutant hard-coding
+  /// either direction survives a fixture that only ever shows one. `required` is the sole
+  /// optional flag among them, so an explicit null reads as its absent default instead of
+  /// aborting the parse — the two spec-required flags are parsed unguarded like every
+  /// other required member.
+  @Test
+  void parseNestedFlagsAtTheOppositePolarity() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+        {"incident":{"incident_type":{"id":"type-2","create_in_triage":"optional",\
+        "is_default":false,"private_incidents_only":true},\
+        "incident_role_assignments":[{"role":{"id":"role-2","required":null}}],\
+        "name":"after"}}"""));
+
+    final var incidentType = response.incidentType();
+    assertEquals("type-2", incidentType.id());
+    assertEquals("optional", incidentType.createInTriage());
+    assertFalse(incidentType.isDefault());
+    assertTrue(incidentType.privateIncidentsOnly());
+
+    final var role = List.copyOf(response.incidentRoleAssignments()).getFirst().role();
+    assertEquals("role-2", role.id());
+    assertFalse(role.required(), "a null optional boolean reads as its absent default");
+
+    assertEquals("after", response.name());
+  }
+
   @Test
   void parsePrivateVisibility() {
     final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
@@ -436,6 +534,7 @@ final class CreateIncidentResponseTests {
     // OffsetDateTime.parse would NPE on one.
     final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
         {"incident":{"id":"inc-1","has_debrief":null,\
+        "ms_teams_channel_url":null,"slack_channel_url":null,\
         "workload_minutes_late":null,"workload_minutes_sleeping":null,\
         "workload_minutes_total":null,"workload_minutes_working":null,\
         "duration_metrics":[{"duration_metric":{"id":"dm-1","name":"Lasted"},\
@@ -445,6 +544,8 @@ final class CreateIncidentResponseTests {
 
     assertEquals("inc-1", response.id());
     assertFalse(response.hasDebrief(), "a null boolean reads as its absent default");
+    assertNull(response.msTeamsChannelUrl());
+    assertNull(response.slackChannelUrl());
     assertNull(response.workloadMinutesLate());
     assertNull(response.workloadMinutesSleeping());
     assertNull(response.workloadMinutesTotal());
