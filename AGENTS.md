@@ -96,28 +96,30 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
                                                  #   :incident-io:fuzzRequest|fuzzResponse
                                                  #   :incident-pagerduty:fuzzPayload
                                                  #   :incident-webhook:fuzzFormat
-./gradlew :<module>:hardeningHelp                # installed task/property inventory
+./gradlew :<module>:hardeningHelp                # installed-version authority; run it
 ```
 
 Those fifteen suites and four fuzz targets are this repo's inventory, declared in each
 module's `build.gradle.kts` under the `hardening` extension (from sava-build's
 `software.sava.build.feature.hardening` plugin). Everything else about the tooling — what
 each writer task does, which properties exist, which have been refused — comes from
-`hardeningHelp` and `hardeningAgentTemplate`, the installed-version authorities; the
+`:<module>:hardeningHelp` and `:<module>:hardeningAgentTemplate`, the installed-version
+authorities; the
 process doctrine behind them lives in sava-build's `HARDENING.md` (local clone path in
 `AGENTS.local.md`).
 
 Local hardening records, per module under `config/pitest/`: accepted baselines
 `<suite>-accepted.csv`, their acceptance arguments in `README.md`, and their bound
-toolchain provenance `<suite>-pitest-version` plus `<suite>-pitest-toolchain.tsv`. A suite
-with nothing unkilled has no accepted file at all. No suite times out today, so no
-`<suite>-timeouts.csv` exists yet — the timeout audit is armed, not active.
+toolchain provenance `<suite>-pitest-version` plus `<suite>-pitest-toolchain.tsv`. Ten
+accepted files are tracked here: `incident-core` api; `incident-io` adapter, config and
+request; `incident-pagerduty` adapter, config and payload; `incident-webhook` adapter,
+config and format. No timeout records are tracked in this repository today.
 
-**Ownership:** CI runs `check` only. `hardeningCertify` plus an explicit local
-`fuzzAll -PmaxFuzzTime=<seconds> -PmaxParallelFuzzTargets=<count>` campaign are
+**Ownership:** CI runs `check` only. `:<module>:hardeningCertify` plus an explicit local
+`:<module>:fuzzAll -PmaxFuzzTime=<seconds> -PmaxParallelFuzzTargets=<count>` campaign are
 release-checklist items, run locally with both budgets recorded. Run
-`mutationOwnershipAudit` before handoff whenever the production-class inventory changes or
-a suite's target/exclusion rules change.
+`:<module>:mutationOwnershipAudit` before handoff whenever the production-class inventory
+changes or a suite's target/exclusion rules change.
 
 Conventions to preserve:
 
@@ -135,8 +137,10 @@ Conventions to preserve:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
   and *regression* (a committed landing place for findings — the `request`, `payload` and
   `format` corpora; measured to change no mutation score). "The mutator reaches this
-  format from scratch" answers only the bootstrap question. Where genuinely neither
-  applies, record `declineSeedCorpus`/`declineMutator` with a measured reason. Seed
+  format from scratch" answers only the bootstrap question. All four targets here
+  declare one; if a future target genuinely does neither job, take the decline property
+  from `:<module>:hardeningHelp`, and record the measurement
+  that justified it the way an acceptance is argued. Seed
   provenance goes in a README next to — never inside — the corpus dir.
 - Our copy-on-write builder acceptances (`# copy-on-write` / `# defensive-copy` in
   `api-accepted.csv` and `payload-accepted.csv`) argue only the content-equal sibling of
@@ -146,12 +150,11 @@ Conventions to preserve:
 
 ### Hardening rules (synced from sava-build's HARDENING.md)
 
-The block below is generated — print the installed version with
-`./gradlew :incident-core:hardeningAgentTemplate` and re-diff it with
-`./gradlew :incident-core:hardeningAgentTemplateDiff`. After a sava-build upgrade,
-re-diff this block, **act on** each changed bullet, then update the marker. The block and
-its marker land with — never ahead of — the release pin in `settings.gradle.kts` that
-ships the digest they acknowledge.
+The block below is generated. After a sava-build upgrade this repo runs
+`:incident-core:hardeningAgentTemplate` and `:incident-core:hardeningAgentTemplateDiff`,
+**acts on** each changed bullet, and only then updates the marker. The block and its marker land
+with — never ahead of — the release pin in `settings.gradle.kts` that ships the digest
+they acknowledge.
 
 <!-- hardening-template block:start -->
 > - **Scale verification to the change.** Iterate with the module's `test`
@@ -191,25 +194,36 @@ ships the digest they acknowledge.
 >   setup would otherwise be lost, and never embed PIT coordinates or line numbers.
 > - Baseline keys are line-less (`class,method,mutator,STATUS`) — editing
 >   above a mutated method churns nothing, and `# line` tags are review
->   metadata. A new mutant replacing a killed one at the same key can inherit
+>   metadata. New or edited mutation-evidence prose should use line-less
+>   class/method/mutator identifiers rather than source line numbers. Existing prose
+>   is not a plugin-upgrade gate; repair a stale locator when ordinary review encounters
+>   it. The current PIT report and the row's `# line` tag are the sole transient locators.
+>   A new mutant replacing a
+>   killed one at the same key can inherit
 >   its acceptance, so treat a line-drift advisory whose written argument no
 >   longer fits the code as that swap until shown otherwise. After review, use
 >   `BaselineRetag` to refresh only matched line metadata while preserving every
 >   accepted row; never use an unrelated acceptance or deletion merely to clear
 >   the advisory. Use the installed plugin's named writer tasks and heed their
->   candidate previews; never hand-edit
+>   candidate previews. Before `BaselinePrune` can delete, two distinct completed
+>   fresh full history-free previews must have the exact same candidate multiset;
+>   its own third fresh write-boundary run must match them too. Candidate drift is a
+>   reviewer-stop, and matching bytes do not replace review of the relevant
+>   solo/gate load context or each removal criterion. Never hand-edit
 >   record structure or provenance stamps. A PIT, PIT-plugin/tool-artifact,
 >   ArcMutate-base, or certificate change uses `pitest<Suite>BaselineRebase`: it
 >   preserves every old row, seeds new rows `# untriaged`, and stamps the reviewed
->   toolchain only after a successful fresh observation. Perform a schema
+>   toolchain only after a successful fresh observation. That provenance binds the
+>   current transition and observation; it does not claim that every conservatively
+>   preserved row was generated by the new toolchain. Perform a schema
 >   migration/rollback only with a fleet pin plan. A `[history]` report may check
 >   the ratchet but cannot support adding, removing, or relabelling
 >   accepted/timeout records; run `pitest<Suite> -PnoMutationHistory` first.
-> - Consumer hardening notes contain only local ownership, measurements, acceptance
->   reasons, and provenance. `AGENTS.md` carries this exact generated,
->   digest-pinned template with repository-specific facts outside its bounded block,
->   but no independently maintained
->   copy of plugin task semantics; use `hardeningHelp` and
+> - Consumer hardening notes should focus on local ownership, measurements, acceptance
+>   reasons, and provenance. Prefer a `hardeningHelp` pointer over a detailed copy of
+>   installed task behavior, but do not turn a plugin upgrade into a repository-wide
+>   prose migration. `AGENTS.md` carries this exact generated, digest-pinned template
+>   with repository-specific facts outside its bounded block. Use `hardeningHelp` and
 >   project-qualified `hardeningAgentTemplate` as the installed-version authorities,
 >   and run the matching read-only `hardeningAgentTemplateDiff` against its explicitly
 >   bounded block on every template-digest move before acknowledging the new marker.
@@ -377,7 +391,13 @@ ships the digest they acknowledge.
 >   then packing/process overhead. Run `pitest<Suite>Diagnostic` full and scoped when
 >   per-process progress is missing; its separate raw streams establish no total order,
 >   and the last announced mutation is context, not cause. Only a clean fresh full
->   unscoped run can support records or certification.
+>   unscoped run can support records or certification. Such a later clean run (or a
+>   successful `hardeningCertify`) is sufficient closure for a non-recurring invalid
+>   outcome: it does not diagnose that failure, and the invalid attempt creates no
+>   mutation-record debt. If certification was interrupted, retry the affected
+>   project's whole `hardeningCertify`; its receipt deliberately re-executes every
+>   suite in that project in one invocation rather than stitching attempts, while
+>   other project receipts remain independent.
 >   The daemon log
 >   (`~/.gradle/daemon/<version>/daemon-<pid>.out.log`) keeps a failed build's
 >   full output even when the shell discarded it — read it before calling a
@@ -398,15 +418,17 @@ ships the digest they acknowledge.
 >   waiting. Give test clocks a non-zero origin — a clock starting at 0 makes
 >   every "start timestamp mutated to 0" mutant equivalent by accident.
 <!-- hardening-template block:end -->
-<!-- hardening-template sha256:f866084114e0 -->
+<!-- hardening-template sha256:4700f2aad913 -->
 
 ### Build notes
 
 - Gradle resolves the sava-build plugins from the Gradle Plugin Portal or GitHub
   Packages; GitHub Packages needs the `savaGithubPackagesUsername` /
   `savaGithubPackagesPassword` Gradle properties.
-- The Java toolchain version comes from `gradle/sava.properties` (`javaVersion`); JDK
-  provisioning is automatic.
+- This repo pins its toolchain with `javaVersion` in `gradle/sava.properties`, and
+  `settings.gradle.kts` applies sava-build's `software.sava.build.feature.jdk-provisioning`
+  settings plugin; how that plugin resolves or provisions a JDK is the plugin's to
+  document.
 
 #### Building against an unpublished sava-build change
 
@@ -419,21 +441,15 @@ test repo and point this build at it with `savaBuildLocalRepo` (the clone path b
   && ./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo
 ```
 
-The property adds that repo to `pluginManagement` and rewrites every `software.sava.build*`
-plugin id to `software.sava:sava-build:0.0.0-test`, so the versions in the
-`settings.gradle.kts` `plugins {}` block are ignored while it is set — nothing in that file
-needs editing, and an unset property is the normal published path. Put it in
-`~/.gradle/gradle.properties` to keep it on across invocations.
+Run `:<module>:hardeningHelp` for the installed-version account of the
+`savaBuildLocalRepo` property. The repository-specific rule is only
+where the value lives: `AGENTS.local.md` or `~/.gradle/gradle.properties` to keep it on
+across invocations, never `settings.gradle.kts`.
 
-**The publish is not automatic.** sava-build's test repo is a plain Maven directory, not an
-included build: every sava-build edit needs the publish task re-run, or this build silently
-keeps resolving the previously published jar. (Gradle does re-read `file:` repositories on
-each resolution, so a *republished* `0.0.0-test` is picked up immediately — the stale case
-is only a forgotten publish, which is why the snippet above chains the two.) The tell is the
-end-of-build notice the plugin prints whenever the property is set — it names the resolved
-repo dir, the last-publish age and the application-time plugin SHA-256, on every build
-including configuration-cache hits. When done, drop the property and bump the versions in
-`settings.gradle.kts` to the released sava-build.
+**Re-publish before every run.** This repo's policy is to chain the publish task and the
+build after each sava-build edit, as the snippet above does. Consult
+`:<module>:hardeningHelp` rather than a copy kept here. When done, drop the property and
+bump the versions in `settings.gradle.kts` to the released sava-build.
 
 ## AGENTS.local.md template
 

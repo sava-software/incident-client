@@ -1,27 +1,22 @@
 # Mutation-testing baseline & triage policy
 
-`<suite>-accepted.csv` records this module's argued-unkilled mutants. Each row is
-`class,method,mutator,STATUS` plus a trailing `# <family>` label and a diagnostic
-`# line N` tag; identical rows are sibling mutants of one compound condition and the
-comparison is a multiset, so never hand-dedupe. `<suite>-pitest-version` and
-`<suite>-pitest-toolchain.tsv` bind the PIT/ArcMutate toolchain the rows were measured
-under. A suite with nothing unkilled has no accepted file at all.
+`<suite>-accepted.csv` records this module's argued-unkilled mutants. The CSV's
+`# line N` tag and the current PIT report are the only places a source coordinate
+belongs — this README identifies a mutant by class, method, mutator, and the branch
+being argued, never by line. `<suite>-pitest-version` and
+`<suite>-pitest-toolchain.tsv` are committed beside them.
 
-The legal outcomes for a new unkilled mutant, the determinism rules, and the named writer
-tasks that may touch these files are all owned by sava-build: run
-`./gradlew :<module>:hardeningHelp` and `./gradlew :<module>:hardeningAgentTemplate` for the
-installed version's authority, and read sava-build's `HARDENING.md` for the doctrine behind
-them. Never widen a baseline just to make a build pass.
+The legal outcomes for a new unkilled mutant, the determinism rules, and the named
+writer tasks that may touch these files are all owned by sava-build, not by this
+file: run `./gradlew :incident-webhook:hardeningHelp` and
+`./gradlew :incident-webhook:hardeningAgentTemplate` for the installed version's
+authority, and read sava-build's `HARDENING.md` for the doctrine behind them. Never
+widen a baseline just to make a build pass.
 
-`# untriaged` marks recorded-but-not-yet-argued debt — it is not acceptance, and a
-`NO_COVERAGE` row is never an equivalence claim. Everything below the triaged heading is
+Everything below the triaged heading is
 grouped by the principle that makes it equivalent.
 
 ## Untriaged debt
-
-A first baseline seeded from the pre-existing survivor population is triage
-debt made explicit, not acceptance. List it here until each key is killed,
-refactored away, or moved below with a reason.
 
 - None. The module was hardened at creation (2026-07-26): the initial `format`
   survivors (2) were killed with a null-`customDetails` custom-alert test, and
@@ -45,34 +40,37 @@ refactored away, or moved below with a reason.
 Group by the principle that makes them equivalent (see the recurring families
 in HARDENING.md); the baseline CSVs carry the exact keys.
 
-- `# boundary-identity` (format: `TelegramTextFormat.render:36`) — the
-  `text.length() > MAX_TEXT_LENGTH` truncation guard: the `>=` boundary mutant
-  differs only for text of exactly the limit length, where
-  `substring(0, MAX_TEXT_LENGTH)` returns identical content — both branches
-  produce the same string, so no input can distinguish them. The at-limit and
-  over-limit behaviours are pinned by exact-output tests.
-- `# always-true-delegate` (config: `WebhookConfig$Parser.test:181`) —
-  `return super.test(...)` where the superclass either returns true or throws
-  on unknown fields; the mutated constant-true return preserves the call and
-  its side effects, so no input can distinguish it. Escape hatch: a superclass
-  path that returns false would make the propagation observable.
-- `# empty-noop-guard` (adapter: `WebhookClient$Builder.createClient:46`) —
-  `if (!headers.isEmpty())` guards building the header-applying request
-  wrapper; with no headers the wrapper iterates an empty map and returns the
-  builder unchanged, so forcing the guard true only swaps a null
-  `extendRequest` (identity in `JsonHttpClient`) for an observable no-op.
-- `# unreachable-1xx` (adapter: `WebhookClientImpl.lambda$static$0:23`) —
-  the `statusCode < 200` arm of the success check. Only a *final* 1xx status
+- `# boundary-identity` (format: `TelegramTextFormat.render`,
+  `ConditionalsBoundaryMutator`) — the `text.length() > MAX_TEXT_LENGTH`
+  truncation guard: the `>=` boundary mutant differs only for text of exactly
+  the limit length, where `substring(0, MAX_TEXT_LENGTH)` returns identical
+  content — both branches produce the same string, so no input can distinguish
+  them. The at-limit and over-limit behaviours are pinned by exact-output tests.
+- `# always-true-delegate` (config: `WebhookConfig$Parser.test`,
+  `BooleanTrueReturnValsMutator`) — the `return super.test(...)` delegation,
+  where the superclass either returns true or throws on unknown fields; the
+  mutated constant-true return preserves the call and its side effects, so no
+  input can distinguish it. Escape hatch: a superclass path that returns false
+  would make the propagation observable.
+- `# empty-noop-guard` (adapter: `WebhookClient$Builder.createClient`,
+  `RemoveConditionalMutator_EQUAL_IF`) — the `if (!headers.isEmpty())` guard
+  around building the header-applying request wrapper; with no headers the
+  wrapper iterates an empty map and returns the builder unchanged, so forcing
+  the guard true only swaps a null `extendRequest` (identity in
+  `JsonHttpClient`) for an observable no-op.
+- `# unreachable-1xx` (adapter: `WebhookClientImpl.lambda$static$0`,
+  `RemoveConditionalMutator_ORDER_IF`) — the `statusCode < 200` arm of the
+  success check in the status predicate. Only a *final* 1xx status
   distinguishes this direction, and `java.net.http` never surfaces one:
   interim responses are consumed by the protocol layer, so a raw-socket
   harness would hang or flap. A flaky harness is worse than recorded debt;
   the `>= 300` arm is pinned by the 300/400/503 wire tests.
-- `# defensive-null-guard` (adapter: `WebhookClientImpl.lambda$static$0:27`) —
-  `body == null ? "" : new String(body, UTF_8)`: `readBody` over the
+- `# defensive-null-guard` (adapter: `WebhookClientImpl.lambda$static$0`,
+  `RemoveConditionalMutator_EQUAL_ELSE`) — the `body == null ? "" : new
+  String(body, UTF_8)` ternary in the same static lambda: `readBody` over the
   `ofInputStream` body handler never yields null (`readAllBytes` returns an
   empty array), so the mutated always-decode arm can only NPE on an input the
   transport cannot produce. The guard stays for the `readBody` contract,
   which declares null a legal return.
 
-Shrinking a baseline is always an improvement; growing one requires a reason
-here.
+Growing a baseline requires a reason here.
