@@ -86,17 +86,20 @@ An entry with an empty `values` list unsets the field. The payload's deprecated
 - `debriefs()` contains scheduled `IncidentDebriefV2` entries with `id`, `startAt`, and
   `endAt` (`OffsetDateTime`). It preserves the server's start-time order and excludes
   cancelled calendar events. Missing, null, and empty lists read as an empty immutable
-  collection.
+  collection. The other response collection accessors do not guarantee immutability.
 
 ### Errors
 
 `IncidentIoRequestException` exposes the HTTP response, error type, request id, and
-status. `errors()` and `getMessage()` expose the readable `code: message` representation.
+status. `errors()` contains readable error descriptions (`code: message` when both are
+present). `getMessage()` joins them with semicolons, falling back to `type` when the
+error list is empty.
 For structured diagnostics, use:
 
 - `errorDetails()` — an immutable list of `ErrorDetail` records, each with `code`,
   `message`, a string-to-string `metadata` map, and an optional `ErrorSource` (`field`
-  and JSON `pointer`). Missing metadata reads as an empty immutable map.
+  and JSON `pointer`). Missing metadata reads as an empty immutable map. An omitted
+  source member reads as null, including `pointer` in a field-only source.
 - `rateLimit()` — optional `RateLimit` with `name`, `limit`, `remaining`, and
   `retryAfter`. The latter preserves the API's RFC 3339 UTC timestamp string. For
   scheduling, upstream recommends the `Retry-After` HTTP header, available from
@@ -105,7 +108,8 @@ For structured diagnostics, use:
   `stacktrace` list. Missing stack frames read as an empty list.
 
 Optional objects read as null when missing or explicitly null. Unknown fields are
-skipped, and malformed recognized fields raise `IncidentIoParseException`.
+skipped, and a recognized field the parser cannot read raises `IncidentIoParseException`.
+Null metadata values and null stack-frame elements are rejected.
 Rate-limit information is available for caller-controlled scheduling; `IncidentService`
 continues to use its configured retry-delay function.
 

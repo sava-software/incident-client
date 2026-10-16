@@ -74,6 +74,11 @@ final class IncidentIoRequestExceptionTests {
         "missing_required_field: name is required",
         "invalid_value: unknown severity"
     ), exception.errors());
+    assertEquals(List.of(
+        new IncidentIoRequestException.ErrorDetail("missing_required_field", "name is required", Map.of(),
+            new IncidentIoRequestException.ErrorSource("name", null)),
+        new IncidentIoRequestException.ErrorDetail("invalid_value", "unknown severity", Map.of(), null)
+    ), exception.errorDetails());
     assertEquals("missing_required_field: name is required; invalid_value: unknown severity", exception.getMessage());
     assertFalse(exception.canBeRetried());
   }
@@ -229,8 +234,10 @@ final class IncidentIoRequestExceptionTests {
   void malformedNestedDiagnosticsThrowParseException() {
     for (final var body : List.of(
         "{\"errors\":[{\"metadata\":[]}]}",
+        "{\"errors\":[{\"metadata\":{\"key\":null}}]}",
         "{\"errors\":[{\"source\":[]}]}",
         "{\"rate_limit\":{\"limit\":\"not a number\"}}",
+        "{\"debug\":{\"stacktrace\":[null]}}",
         "{\"debug\":{\"stacktrace\":[{}]}}")) {
       final var response = new StubResponse(500);
       final var thrown = assertThrows(IncidentIoParseException.class,
@@ -238,6 +245,56 @@ final class IncidentIoRequestExceptionTests {
       assertSame(response, thrown.httpResponse());
       assertNotNull(thrown.getCause());
     }
+  }
+
+  @Test
+  void diagnosticRecordsRejectNullCollectionMembers() {
+    final var nullKey = new HashMap<String, String>();
+    nullKey.put(null, "value");
+    assertThrows(NullPointerException.class,
+        () -> new IncidentIoRequestException.ErrorDetail("code", "message", nullKey, null));
+
+    final var nullValue = new HashMap<String, String>();
+    nullValue.put("key", null);
+    assertThrows(NullPointerException.class,
+        () -> new IncidentIoRequestException.ErrorDetail("code", "message", nullValue, null));
+
+    final var nullFrame = new ArrayList<String>();
+    nullFrame.add(null);
+    assertThrows(NullPointerException.class,
+        () -> new IncidentIoRequestException.DebugInfo("message", nullFrame));
+  }
+
+  @Test
+  void collidingMetadataKeysPreserveContentsAndDefensiveCopy() {
+    final var metadata = new HashMap<String, String>();
+    final var body = new StringBuilder("{\"errors\":[{\"metadata\":{");
+    // Equal-length combinations of Aa and BB have the same String.hashCode.
+    for (int i = 0; i < 256; ++i) {
+      final var keyBuilder = new StringBuilder(16);
+      for (int bit = 0; bit < 8; ++bit) {
+        keyBuilder.append((i & (1 << bit)) == 0 ? "Aa" : "BB");
+      }
+      final var key = keyBuilder.toString();
+      final var value = "value" + i;
+      metadata.put(key, value);
+      if (i > 0) {
+        body.append(',');
+      }
+      body.append('"').append(key).append("\":\"").append(value).append('"');
+    }
+    body.append("}}]}");
+    final var exception = IncidentIoRequestException.parse(new StubResponse(422), body.toString().getBytes(UTF_8));
+    final var parsedMetadata = exception.errorDetails().getFirst().metadata();
+    assertEquals(metadata, parsedMetadata);
+    assertThrows(UnsupportedOperationException.class, () -> parsedMetadata.put("later", "value"));
+
+    final var expected = new HashMap<>(metadata);
+    final var detail = new IncidentIoRequestException.ErrorDetail("code", "message", metadata, null);
+    metadata.clear();
+    metadata.put("later", "mutation");
+    assertEquals(expected, detail.metadata());
+    assertThrows(UnsupportedOperationException.class, () -> detail.metadata().put("later", "value"));
   }
 
   @Test

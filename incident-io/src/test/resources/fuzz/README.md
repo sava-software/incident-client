@@ -42,6 +42,6 @@ input, so a rejection by one parser does not prevent coverage of the other.
 - `error.json` — hand-written `ErrorResponse` bootstrap input added 2026-10-16
   against incident.io Go SDK schema commit `91f1a9a`. Covers per-error metadata
   with escaped keys and values, source locations, rate limits and retry timestamps,
-  and debug stack frames. The corresponding structured-error unit tests assert
-  preservation of those values; corpus replay exercises the parser on this shape
-  during `check`.
+  and debug stack frames. Structured-error unit tests assert preservation of the
+  same diagnostic fields using separate inline examples; corpus replay exercises
+  the parser on this shape during `check`.

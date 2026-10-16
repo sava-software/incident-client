@@ -68,8 +68,8 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
 - `# defensive-null-guard` (adapter: `WebhookClientImpl.lambda$static$0`,
   `RemoveConditionalMutator_EQUAL_ELSE`) — the `body == null ? "" : new
   String(body, UTF_8)` ternary in the same static lambda: `readBody` over the
-  `ofInputStream` body handler never yields null (`readAllBytes` returns an
-  empty array), so the mutated always-decode arm can only NPE on an input the
+  `ofByteArray` body handler never yields null (an empty body yields an empty
+  array), so the mutated always-decode arm can only NPE on an input the
   transport cannot produce. The guard stays for the `readBody` contract,
   which declares null a legal return.
 

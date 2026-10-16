@@ -8,8 +8,10 @@ import systems.comodal.jsoniter.JsonIterator;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /// A non-2xx incident.io response, carrying the error envelope and optional structured
 /// diagnostics. [#errors()] exposes readable messages; [#errorDetails()] also preserves
@@ -100,14 +102,26 @@ public final class IncidentIoRequestException extends RuntimeException implement
   }
 
   /// An `ErrorSingle`. Missing metadata is an empty immutable map; `source` is optional.
+  /// Metadata keys and values must be non-null.
   public record ErrorDetail(String code, String message, Map<String, String> metadata, ErrorSource source) {
 
     public ErrorDetail {
-      metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+      if (metadata == null) {
+        metadata = Map.of();
+      } else {
+        // HashMap treeifies colliding String keys; Map.copyOf's compact map probes linearly.
+        final var copy = new HashMap<>(metadata);
+        copy.forEach((key, value) -> {
+          Objects.requireNonNull(key, "metadata key");
+          Objects.requireNonNull(value, "metadata value");
+        });
+        metadata = Collections.unmodifiableMap(copy);
+      }
     }
   }
 
   /// An `ErrorSource`: the field name and JSON pointer identifying the invalid input.
+  /// The parser tolerates an omitted member and represents it as null.
   public record ErrorSource(String field, String pointer) {
   }
 
@@ -118,7 +132,8 @@ public final class IncidentIoRequestException extends RuntimeException implement
   public record RateLimit(String name, long limit, long remaining, String retryAfter) {
   }
 
-  /// An `ErrorDebug`. Missing stack frames are an empty immutable list.
+  /// An `ErrorDebug`. Missing stack frames are an empty immutable list; null elements
+  /// within a supplied list are rejected.
   public record DebugInfo(String message, List<String> stacktrace) {
 
     public DebugInfo {

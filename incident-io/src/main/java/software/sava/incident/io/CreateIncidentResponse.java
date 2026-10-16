@@ -14,7 +14,8 @@ public interface CreateIncidentResponse {
   Collection<CustomFieldEntryV2> customFieldEntries();
 
   /// Scheduled debriefs in the order returned by incident.io (by start time), excluding
-  /// cancelled calendar events. Absent debriefs read as an empty collection.
+  /// cancelled calendar events. The returned collection is immutable and empty when
+  /// debriefs are absent.
   Collection<IncidentDebriefV2> debriefs();
 
   Collection<IncidentDurationMetricWithValueV2> durationMetrics();

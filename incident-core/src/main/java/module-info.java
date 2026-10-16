@@ -1,5 +1,5 @@
 module software.sava.incident_core {
-  requires java.net.http;
+  requires transitive java.net.http;
   requires transitive systems.comodal.json_iterator;
 
   uses software.sava.incident.core.api.IncidentClientFactory;
