@@ -197,6 +197,20 @@ final class IncidentIoRequestExceptionTests {
   }
 
   @Test
+  void omittedSourceMembersAreNull() {
+    final var exception = IncidentIoRequestException.parse(new StubResponse(422), """
+        {"errors":[
+          {"code":"pointer_only","source":{"pointer":"/name"}},
+          {"code":"empty_source","source":{}}
+        ]}
+        """.getBytes(UTF_8));
+    assertEquals(new IncidentIoRequestException.ErrorSource(null, "/name"),
+        exception.errorDetails().get(0).source());
+    assertEquals(new IncidentIoRequestException.ErrorSource(null, null),
+        exception.errorDetails().get(1).source());
+  }
+
+  @Test
   void diagnosticCollectionsAreImmutableAtEverySize() {
     for (int size = 0; size <= 2; ++size) {
       final var metadata = new HashMap<String, String>();

@@ -85,8 +85,8 @@ public final class IncidentIoRequestException extends RuntimeException implement
     return errors;
   }
 
-  /// Structured errors in response order. [#errors()] exposes the provider-neutral
-  /// `code: message` representation of these same entries.
+  /// Structured errors in response order. [#errors()] exposes a readable description
+  /// of each entry (`code: message` when both are present).
   public List<ErrorDetail> errorDetails() {
     return errorDetails;
   }
