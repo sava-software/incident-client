@@ -13,6 +13,10 @@ public interface CreateIncidentResponse {
 
   Collection<CustomFieldEntryV2> customFieldEntries();
 
+  /// Scheduled debriefs in the order returned by incident.io (by start time), excluding
+  /// cancelled calendar events. Absent debriefs read as an empty collection.
+  Collection<IncidentDebriefV2> debriefs();
+
   Collection<IncidentDurationMetricWithValueV2> durationMetrics();
 
   ExternalIssueReferenceV2 externalIssueReference();
@@ -134,6 +138,9 @@ public interface CreateIncidentResponse {
   }
 
   record EmbeddedCatalogEntryV2(Collection<String> aliases, String externalId, String id, String name) {
+  }
+
+  record IncidentDebriefV2(String id, OffsetDateTime startAt, OffsetDateTime endAt) {
   }
 
   /// An `IncidentDurationMetricWithValueV2`. `status` says whether `valueSeconds` still

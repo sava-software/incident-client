@@ -73,8 +73,7 @@ An entry with an empty `values` list unsets the field. The payload's deprecated
 
 ### Response
 
-`CreateIncidentResponse` follows `IncidentV2`. Two shapes are worth knowing before you
-read from it:
+`CreateIncidentResponse` follows `IncidentV2`. Useful response shapes:
 
 - `creator()` is an `ActorV2` **union** — `alert()`, `apiKey()`, `user()`, `workflow()`,
   with the unset variants null. An incident created through this client is created by an
@@ -84,6 +83,31 @@ read from it:
   per selected option), and which component of `CustomFieldValueV2` is populated follows
   the entry's `customFieldType`: `valueText`, `valueOption`, `valueCatalogEntry`,
   `valueLink`, or `valueNumeric`.
+- `debriefs()` contains scheduled `IncidentDebriefV2` entries with `id`, `startAt`, and
+  `endAt` (`OffsetDateTime`). It preserves the server's start-time order and excludes
+  cancelled calendar events. Missing, null, and empty lists read as an empty immutable
+  collection.
+
+### Errors
+
+`IncidentIoRequestException` exposes the HTTP response, error type, request id, and
+status. `errors()` and `getMessage()` expose the readable `code: message` representation.
+For structured diagnostics, use:
+
+- `errorDetails()` — an immutable list of `ErrorDetail` records, each with `code`,
+  `message`, a string-to-string `metadata` map, and an optional `ErrorSource` (`field`
+  and JSON `pointer`). Missing metadata reads as an empty immutable map.
+- `rateLimit()` — optional `RateLimit` with `name`, `limit`, `remaining`, and
+  `retryAfter`. The latter preserves the API's RFC 3339 UTC timestamp string. For
+  scheduling, upstream recommends the `Retry-After` HTTP header, available from
+  `httpResponse().headers()`, which gives the delay in seconds.
+- `debug()` — optional `DebugInfo` with the server's internal `message` and immutable
+  `stacktrace` list. Missing stack frames read as an empty list.
+
+Optional objects read as null when missing or explicitly null. Unknown fields are
+skipped, and malformed recognized fields raise `IncidentIoParseException`.
+Rate-limit information is available for caller-controlled scheduling; `IncidentService`
+continues to use its configured retry-delay function.
 
 ## Configuration
 

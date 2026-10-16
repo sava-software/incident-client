@@ -13,6 +13,7 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            OffsetDateTime createdAt,
                                            ActorV2 creator,
                                            Collection<CustomFieldEntryV2> customFieldEntries,
+                                           Collection<IncidentDebriefV2> debriefs,
                                            Collection<IncidentDurationMetricWithValueV2> durationMetrics,
                                            ExternalIssueReferenceV2 externalIssueReference,
                                            boolean hasDebrief,
@@ -42,6 +43,10 @@ public record CreateIncidentResponseRecord(String callUrl,
                                            Double workloadMinutesSleeping,
                                            Double workloadMinutesTotal,
                                            Double workloadMinutesWorking) implements CreateIncidentResponse {
+
+  public CreateIncidentResponseRecord {
+    debriefs = debriefs == null ? List.of() : List.copyOf(debriefs);
+  }
 
   private static final FieldMatcher ENVELOPE_FIELDS = FieldMatcher.of("incident");
 
@@ -93,7 +98,8 @@ public record CreateIncidentResponseRecord(String callUrl,
         "workload_minutes_late",
         "workload_minutes_sleeping",
         "workload_minutes_total",
-        "workload_minutes_working"
+        "workload_minutes_working",
+        "debriefs"
     );
 
     // `ActorV2` is a union: whichever of these is present names the creator
@@ -138,6 +144,7 @@ public record CreateIncidentResponseRecord(String callUrl,
     private static final FieldMatcher TIMESTAMP_FIELDS = FieldMatcher.of("id", "name", "rank");
     private static final FieldMatcher TIMESTAMP_ENTRY_FIELDS = FieldMatcher.of("incident_timestamp", "value");
     private static final FieldMatcher VALUE_FIELDS = FieldMatcher.of("value");
+    private static final FieldMatcher DEBRIEF_FIELDS = FieldMatcher.of("id", "start_at", "end_at");
 
     // unknown wire values resolve to null rather than throwing, matching the parser's
     // skip-unknown-fields policy
@@ -178,6 +185,7 @@ public record CreateIncidentResponseRecord(String callUrl,
     private Double workloadMinutesSleeping;
     private Double workloadMinutesTotal;
     private Double workloadMinutesWorking;
+    private Collection<IncidentDebriefV2> debriefs;
 
     private CreateIncidentResponseRecord create() {
       return new CreateIncidentResponseRecord(
@@ -185,6 +193,7 @@ public record CreateIncidentResponseRecord(String callUrl,
           createdAt,
           creator,
           customFieldEntries == null ? List.of() : customFieldEntries,
+          debriefs,
           durationMetrics == null ? List.of() : durationMetrics,
           externalIssueReference,
           hasDebrief,
@@ -273,9 +282,27 @@ public record CreateIncidentResponseRecord(String callUrl,
             workloadMinutesWorking = ji.readDouble();
           }
         }
+        case 33 -> debriefs = ji.readList(this::parseIncidentDebriefV2);
         default -> ji.skip();
       }
       return true;
+    }
+
+    private IncidentDebriefV2 parseIncidentDebriefV2(final JsonIterator ji) {
+      final var p = new Object() {
+        String id;
+        OffsetDateTime startAt, endAt;
+      };
+      ji.testObject(DEBRIEF_FIELDS, (field, ji1) -> {
+        switch (field) {
+          case 0 -> p.id = ji1.readString();
+          case 1 -> p.startAt = OffsetDateTime.parse(ji1.readString());
+          case 2 -> p.endAt = OffsetDateTime.parse(ji1.readString());
+          default -> ji1.skip();
+        }
+        return true;
+      });
+      return new IncidentDebriefV2(p.id, p.startAt, p.endAt);
     }
 
     private ActorV2 parseActorV2(final JsonIterator ji) {

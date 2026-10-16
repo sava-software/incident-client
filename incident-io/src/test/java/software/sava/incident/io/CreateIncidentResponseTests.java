@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -45,6 +48,19 @@ final class CreateIncidentResponseTests {
                 {"value_text": "second-entry"}
               ],
               "unknown": []
+            }
+          ],
+          "debriefs": [
+            {
+              "id": "debrief-1",
+              "start_at": "2024-05-02T10:00:00.123456789+02:00",
+              "end_at": "2024-05-02T11:00:00.987654321+02:00",
+              "unknown": {"nested": [true, null, {"x": "y"}]}
+            },
+            {
+              "id": "debrief-2",
+              "start_at": "2024-05-03T09:00:00Z",
+              "end_at": "2024-05-03T10:00:00Z"
             }
           ],
           "duration_metrics": [
@@ -188,6 +204,16 @@ final class CreateIncidentResponseTests {
     assertEquals("Payments", values.getFirst().valueText());
     assertEquals("second-entry", values.get(1).valueText());
 
+    assertEquals(List.of(
+        new CreateIncidentResponse.IncidentDebriefV2("debrief-1",
+            OffsetDateTime.parse("2024-05-02T10:00:00.123456789+02:00"),
+            OffsetDateTime.parse("2024-05-02T11:00:00.987654321+02:00")),
+        new CreateIncidentResponse.IncidentDebriefV2("debrief-2",
+            OffsetDateTime.parse("2024-05-03T09:00:00Z"),
+            OffsetDateTime.parse("2024-05-03T10:00:00Z"))
+    ), List.copyOf(response.debriefs()));
+    assertThrows(UnsupportedOperationException.class, () -> response.debriefs().clear());
+
     final var durationMetrics = List.copyOf(response.durationMetrics());
     assertEquals(1, durationMetrics.size());
     final var durationMetric = durationMetrics.getFirst();
@@ -292,6 +318,8 @@ final class CreateIncidentResponseTests {
     assertNull(response.createdAt());
     assertNull(response.creator());
     assertEquals(List.of(), response.customFieldEntries());
+    assertEquals(List.of(), response.debriefs());
+    assertThrows(UnsupportedOperationException.class, () -> response.debriefs().add(null));
     assertEquals(List.of(), response.durationMetrics());
     assertNull(response.externalIssueReference());
     assertFalse(response.hasDebrief());
@@ -559,5 +587,84 @@ final class CreateIncidentResponseTests {
     final var timestamp = List.copyOf(response.incidentTimestampValues()).getFirst();
     assertEquals("ts-1", timestamp.timestampId());
     assertNull(timestamp.value());
+  }
+
+  @Test
+  void emptyAndNullDebriefsNormalizeWithoutConsumingTheFollowingField() {
+    for (final var wireValue : List.of("[]", "null")) {
+      final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse(
+          "{\"incident\":{\"debriefs\":" + wireValue + ",\"name\":\"after\"}}"));
+      assertEquals(List.of(), response.debriefs());
+      assertThrows(UnsupportedOperationException.class, () -> response.debriefs().add(null));
+      assertEquals("after", response.name());
+    }
+  }
+
+  @Test
+  void malformedDebriefTimestampsFailRatherThanSilentlyDroppingTheDebrief() {
+    for (final var field : List.of("start_at", "end_at")) {
+      final var start = field.equals("start_at") ? "not-a-timestamp" : "2024-05-02T10:00:00Z";
+      final var end = field.equals("end_at") ? "not-a-timestamp" : "2024-05-02T11:00:00Z";
+      assertThrows(DateTimeParseException.class, () -> CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+          {"incident":{"debriefs":[{"id":"debrief-1","start_at":"%s","end_at":"%s"}]}}
+          """.formatted(start, end))));
+    }
+  }
+
+  @Test
+  void debriefCollectionsAreDefensiveAndImmutableAtEverySize() {
+    final var response = CreateIncidentResponseRecord.parse(JsonIterator.parse(FULL_RESPONSE));
+    final var values = List.copyOf(response.debriefs());
+    for (int size = 0; size <= values.size(); ++size) {
+      final var supplied = new ArrayList<>(values.subList(0, size));
+      final var copied = withDebriefs(response, supplied);
+      supplied.clear();
+      assertEquals(values.subList(0, size), List.copyOf(copied.debriefs()));
+      assertThrows(UnsupportedOperationException.class, () -> copied.debriefs().add(values.getFirst()));
+    }
+    final var absent = withDebriefs(response, null);
+    assertEquals(List.of(), absent.debriefs());
+    assertThrows(UnsupportedOperationException.class, () -> absent.debriefs().add(values.getFirst()));
+  }
+
+  private static CreateIncidentResponseRecord withDebriefs(
+      final CreateIncidentResponse response,
+      final Collection<CreateIncidentResponse.IncidentDebriefV2> debriefs) {
+    return new CreateIncidentResponseRecord(
+        response.callUrl(),
+        response.createdAt(),
+        response.creator(),
+        response.customFieldEntries(),
+        debriefs,
+        response.durationMetrics(),
+        response.externalIssueReference(),
+        response.hasDebrief(),
+        response.id(),
+        response.incidentRoleAssignments(),
+        response.incidentStatus(),
+        response.incidentTimestampValues(),
+        response.incidentType(),
+        response.lastActivityAt(),
+        response.mode(),
+        response.msTeamsChannelUrl(),
+        response.name(),
+        response.permalink(),
+        response.postmortemDocumentIds(),
+        response.postmortemDocumentUrl(),
+        response.reference(),
+        response.severity(),
+        response.slackChannelId(),
+        response.slackChannelName(),
+        response.slackChannelUrl(),
+        response.slackTeamId(),
+        response.summary(),
+        response.teamIds(),
+        response.updatedAt(),
+        response.visibility(),
+        response.workloadMinutesLate(),
+        response.workloadMinutesSleeping(),
+        response.workloadMinutesTotal(),
+        response.workloadMinutesWorking()
+    );
   }
 }

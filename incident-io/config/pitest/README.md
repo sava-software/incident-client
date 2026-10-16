@@ -43,12 +43,16 @@ grouped by the principle that makes it equivalent.
 Group by the principle that makes them equivalent (see the recurring families
 in HARDENING.md); the baseline CSVs carry the exact keys.
 
-- `# copy-on-write` (adapter: `IncidentIoRequestException$Parser.create` ×3) —
-  the `errors.size() > 1 ? unmodifiableList : errors` routing: both
-  branches return a list with identical content (size ≤ 1 is already an
-  immutable `List.of`), so the boundary/order mutants only change which
-  content-equal instance escapes. Equal but not identical; killable only by
-  asserting mutability the API does not promise.
+- `# copy-on-write` (adapter: `IncidentIoRequestException$Parser.create`,
+  `ConditionalsBoundaryMutator`) — changing `errors.size() > 1` to `>= 1`
+  wraps an already immutable singleton `List.of`. Content and immutability stay
+  identical; only the wrapper instance changes. The mutable-escape direction
+  (`RemoveConditionalMutator_ORDER_ELSE`) is killed by
+  `IncidentIoRequestExceptionTests#diagnosticCollectionsAreImmutableAtEverySize`,
+  which asserts immutability at sizes 0, 1, and 2. Its old acceptance was retired
+  on 2026-10-16 with `pitestAdapterBaselinePrune`: two matching fresh history-free
+  previews (combined response/adapter invocation and standalone adapter invocation)
+  and the third write-boundary run all observed that kill. No new debt was accepted.
 - `# leading-comma-guard` (request: `CreateIncidentRequestRecord.body` and
   `CreateIncidentRequestRecord.appendArray`, both `ConditionalsBoundaryMutator`) — both
   are `sb.length() > 1` guards deciding whether a separating comma is needed, mutated to

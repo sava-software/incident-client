@@ -20,6 +20,9 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
 
 ## `response/` (bootstrap corpus for `CreateIncidentResponseFuzz`)
 
+The response target exercises both success and error parsers independently on each
+input, so a rejection by one parser does not prevent coverage of the other.
+
 - `full.json` — a complete `IncidentV2` response body: all four `ActorV2` creator
   variants, a custom-field entry carrying every `CustomFieldValueV2` shape
   (option, catalog entry with aliases, link, numeric, text), a `UserV2` role
@@ -33,3 +36,12 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
   and the timestamps, ranks and flags on the status, severity, type, role and
   incident-timestamp records), so the bootstrap body is now the full upstream
   shape rather than the subset this client used to model.
+  Extended 2026-10-16 against incident.io Go SDK schema commit `91f1a9a` with
+  `IncidentV2.debriefs`: two `IncidentDebriefV2` entries carrying required ids,
+  start/end timestamps, distinct offsets, and fractional-second precision.
+- `error.json` — hand-written `ErrorResponse` bootstrap input added 2026-10-16
+  against incident.io Go SDK schema commit `91f1a9a`. Covers per-error metadata
+  with escaped keys and values, source locations, rate limits and retry timestamps,
+  and debug stack frames. The corresponding structured-error unit tests assert
+  preservation of those values; corpus replay exercises the parser on this shape
+  during `check`.
