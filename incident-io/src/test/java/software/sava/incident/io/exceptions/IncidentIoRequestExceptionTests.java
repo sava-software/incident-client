@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +20,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class IncidentIoRequestExceptionTests {
+
+  private volatile IncidentIoRequestException collisionParseResult;
 
   private record StubResponse(int statusCode) implements HttpResponse<byte[]> {
 
@@ -309,6 +312,35 @@ final class IncidentIoRequestExceptionTests {
     metadata.put("later", "mutation");
     assertEquals(expected, detail.metadata());
     assertThrows(UnsupportedOperationException.class, () -> detail.metadata().put("later", "value"));
+  }
+
+  @Test
+  void collidingMetadataDoesNotRegressToQuadraticCopying() {
+    final int entryCount = 1 << 16;
+    final var body = new StringBuilder("{\"errors\":[{\"metadata\":{");
+    // Equal-length combinations of Aa and BB have the same String.hashCode.
+    for (int i = 0; i < entryCount; ++i) {
+      if (i > 0) {
+        body.append(',');
+      }
+      body.append('"');
+      for (int bit = 0; bit < 16; ++bit) {
+        body.append((i & (1 << bit)) == 0 ? "Aa" : "BB");
+      }
+      body.append("\":\"value\"");
+    }
+    final var input = body.append("}}]}").toString().getBytes(UTF_8);
+    final var response = new StubResponse(422);
+    try {
+      // This broad limit guards the complexity regression, not API latency.
+      // Fixture construction stays outside the timed parse; the result must escape.
+      assertTimeout(Duration.ofSeconds(3), () -> {
+        collisionParseResult = IncidentIoRequestException.parse(response, input);
+      }, "Parsing colliding metadata must not return to quadratic copying");
+      assertEquals(entryCount, collisionParseResult.errorDetails().getFirst().metadata().size());
+    } finally {
+      collisionParseResult = null;
+    }
   }
 
   @Test
