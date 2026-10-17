@@ -1,5 +1,22 @@
 # Changelog
 
+## [25.5.1](https://github.com/sava-software/incident-client/compare/25.5.0...25.5.1) (2026-10-17)
+
+
+### Features
+
+* **hardening:** update to sava-build 21.5.28 and sync hardening template ([e0de4c7](https://github.com/sava-software/incident-client/commit/e0de4c7f7ae7b59e30328e1ca7fcec77e3478b0d))
+* **hardening:** upgrade PIT framework and toolchains to 1.30.0 ([f613850](https://github.com/sava-software/incident-client/commit/f6138508ab02b31ccc37eb30dd175124a72fac99))
+* **incident-io:** enhance incident schema and serialization ([23e539f](https://github.com/sava-software/incident-client/commit/23e539f9151902add33081dc57aabc89bb2ef383))
+* **incident-io:** expose debriefs and structured errors ([216b2b9](https://github.com/sava-software/incident-client/commit/216b2b932bd7961efbe5abfe9372ec1462ad2e2f))
+
+
+### Bug Fixes
+
+* **ci:** restrict workflow token permissions ([7837b5f](https://github.com/sava-software/incident-client/commit/7837b5f7ae7b1ebba43e7620bbcf0b7334e59cf7))
+* **incident-io:** address metadata and module review findings ([e0251f7](https://github.com/sava-software/incident-client/commit/e0251f7141548254933f9f0377bc2e98246412d9))
+* **incident-pagerduty:** snapshot payloads and reject nonfinite numbers ([bb4b4a2](https://github.com/sava-software/incident-client/commit/bb4b4a2bb9f2a8d31ec673976796d528ab457e2b))
+
 ## [25.5.0](https://github.com/sava-software/incident-client/compare/25.4.0...25.5.0) (2026-08-07)
 
 
