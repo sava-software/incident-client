@@ -6,11 +6,13 @@ supported against the latest GA OpenJDK release.
 
 ## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/PagerdutyExamples.java)
 
+The Events API authenticates with the integration's routing key; a REST API token
+is not required. See [PagerDuty's authentication guide](https://pagerduty.github.io/python-pagerduty/user_guide.html#authentication).
+
 ```java
 final var client = PagerDutyEventClient.clientBuilder()
     .defaultClientName("CLIENT_NAME")
     .defaultRoutingKey("INTEGRATION_KEY")
-    .authToken("AUTH_TOKEN")
     .createClient();
 
 final var bigInteger = new BigInteger("20988936657440586486151264256610222593863921");

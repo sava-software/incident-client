@@ -80,23 +80,17 @@ record PagerDutyChangeEventPayloadRecord(String summary,
       this.source(prototype.source());
       this.timestamp(prototype.timestamp());
       final var customDetails = prototype.customDetails();
-      this.customDetails = customDetails == null || customDetails.isEmpty()
+      this.customDetails = customDetails == null
           ? Map.of()
-          : customDetails.size() > 1
-          ? new LinkedHashMap<>(customDetails)
-          : Map.copyOf(customDetails);
+          : new LinkedHashMap<>(customDetails);
       final var links = prototype.links();
-      this.links = links == null || links.isEmpty()
+      this.links = links == null
           ? List.of()
-          : links.size() > 1
-          ? new ArrayList<>(links)
-          : List.copyOf(links);
+          : new ArrayList<>(links);
       final var images = prototype.images();
-      this.images = images == null || images.isEmpty()
+      this.images = images == null
           ? List.of()
-          : images.size() > 1
-          ? new ArrayList<>(images)
-          : List.copyOf(images);
+          : new ArrayList<>(images);
     }
 
     @Override
@@ -110,9 +104,9 @@ record PagerDutyChangeEventPayloadRecord(String summary,
           summary,
           timestamp,
           source,
-          customDetails.size() > 1 ? Collections.unmodifiableMap(customDetails) : customDetails,
-          links.size() > 1 ? Collections.unmodifiableList(links) : links,
-          images.size() > 1 ? Collections.unmodifiableList(images) : images,
+          Collections.unmodifiableMap(new LinkedHashMap<>(customDetails)),
+          List.copyOf(links),
+          List.copyOf(images),
           json
       );
     }
@@ -238,6 +232,10 @@ record PagerDutyChangeEventPayloadRecord(String summary,
           case null -> null;
           case BigDecimal bigDecimal -> bigDecimal.toPlainString();
           case BigInteger bigInteger -> bigInteger.toString();
+          case Double number when !Double.isFinite(number) ->
+              throw new IllegalArgumentException("Custom detail '" + entry.getKey() + "' must be a finite number.");
+          case Float number when !Float.isFinite(number) ->
+              throw new IllegalArgumentException("Custom detail '" + entry.getKey() + "' must be a finite number.");
           case Number number -> number;
           case Boolean bool -> bool;
           case Object obj -> {

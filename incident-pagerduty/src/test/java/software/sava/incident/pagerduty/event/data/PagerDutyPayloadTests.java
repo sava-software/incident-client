@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 import static java.time.ZoneOffset.UTC;
 import static org.junit.jupiter.api.Assertions.*;
@@ -161,6 +165,172 @@ final class PagerDutyPayloadTests {
     assertThrows(UnsupportedOperationException.class, () -> changePayload.customDetails().put("k3", "v3"));
     assertThrows(UnsupportedOperationException.class, () -> changePayload.links().add(PagerDutyLinkRef.build().href("h3").create()));
     assertThrows(UnsupportedOperationException.class, () -> changePayload.images().add(PagerDutyImageRef.build().src("s3").create()));
+  }
+
+  @Test
+  void eventCollectionsAreImmutableSnapshotsAtEverySize() {
+    assertCollectionSnapshots(() -> PagerDutyEventPayload.build()
+        .dedupKey("snapshot")
+        .summary("s")
+        .source("src")
+        .severity(PagerDutySeverity.info)
+        .timestamp(TIMESTAMP),
+        "{\"summary\":\"s\",\"source\":\"src\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04Z\"");
+  }
+
+  @Test
+  void changeCollectionsAreImmutableSnapshotsAtEverySize() {
+    assertCollectionSnapshots(() -> PagerDutyChangeEventPayload.build()
+        .summary("s")
+        .timestamp(TIMESTAMP),
+        "{\"summary\":\"s\",\"timestamp\":\"2018-08-01T02:03:04Z\"");
+  }
+
+  private static void assertCollectionSnapshots(final Supplier<PagerDutyChangeEventPayload.Builder> factory,
+                                                final String jsonPrefix) {
+    for (final int size : new int[]{0, 1, 3}) {
+      final var builder = factory.get();
+      final var details = new LinkedHashMap<String, Object>();
+      final var links = new ArrayList<PagerDutyLinkRef>();
+      final var images = new ArrayList<PagerDutyImageRef>();
+      final var detailJson = new ArrayList<String>();
+      final var linkJson = new ArrayList<String>();
+      final var imageJson = new ArrayList<String>();
+      for (int i = 0; i < size; ++i) {
+        final var link = PagerDutyLinkRef.build().href("h" + i).create();
+        final var image = PagerDutyImageRef.build().src("s" + i).create();
+        builder.customDetails("k" + i, "v" + i).link(link).image(image);
+        details.put("k" + i, "v" + i);
+        links.add(link);
+        images.add(image);
+        detailJson.add("\"k" + i + "\":\"v" + i + "\"");
+        linkJson.add("{\"href\":\"h" + i + "\"}");
+        imageJson.add("{\"src\":\"s" + i + "\"}");
+      }
+      final var payload = builder.create();
+      final var addedLink = PagerDutyLinkRef.build().href("later").create();
+      final var addedImage = PagerDutyImageRef.build().src("later").create();
+      builder.customDetails("k0", "replacement").customDetails("later", "value")
+          .link(addedLink).image(addedImage);
+      builder.create();
+
+      assertAll("snapshot of size " + size,
+          () -> assertEquals(details, payload.customDetails()),
+          () -> assertEquals(links, payload.links()),
+          () -> assertEquals(images, payload.images()),
+          () -> assertEquals(jsonPrefix + (size == 0 ? "" : ",\"custom_details\":{" + String.join(",", detailJson) + "}") + "}",
+              payload.payloadJson()),
+          () -> assertEquals(size == 0 ? "" : ",\"links\":[" + String.join(",", linkJson) + "]", payload.linksJson()),
+          () -> assertEquals(size == 0 ? "" : ",\"images\":[" + String.join(",", imageJson) + "]", payload.imagesJson()),
+          () -> assertThrows(UnsupportedOperationException.class, () -> payload.customDetails().put("extra", "value")),
+          () -> assertThrows(UnsupportedOperationException.class, () -> payload.links().add(addedLink)),
+          () -> assertThrows(UnsupportedOperationException.class, () -> payload.images().add(addedImage)));
+    }
+  }
+
+  @Test
+  void repeatedKeyEventDetailsRemainAnImmutableSnapshot() {
+    assertRepeatedKeySnapshot(PagerDutyEventPayload.build()
+        .dedupKey("snapshot")
+        .summary("s")
+        .source("src")
+        .severity(PagerDutySeverity.info)
+        .timestamp(TIMESTAMP));
+  }
+
+  @Test
+  void repeatedKeyChangeDetailsRemainAnImmutableSnapshot() {
+    assertRepeatedKeySnapshot(PagerDutyChangeEventPayload.build().summary("s").timestamp(TIMESTAMP));
+  }
+
+  private static void assertRepeatedKeySnapshot(final PagerDutyChangeEventPayload.Builder builder) {
+    final var payload = builder.customDetails("k", "first").customDetails("k", "second").create();
+    builder.customDetails("k", "third");
+    assertEquals(Map.of("k", "second"), payload.customDetails());
+    assertThrows(UnsupportedOperationException.class, () -> payload.customDetails().put("k", "fourth"));
+  }
+
+  @Test
+  void finiteEventCustomDetailNumbersHaveExactJson() {
+    final var payload = PagerDutyEventPayload.build()
+        .dedupKey("finite")
+        .summary("s")
+        .source("src")
+        .severity(PagerDutySeverity.info)
+        .timestamp(TIMESTAMP)
+        .customDetails("double", 1.5d)
+        .customDetails("float", -2.25f)
+        .customDetails("objectDouble", (Object) 3.5d)
+        .customDetails("objectFloat", (Object) 4.25f)
+        .create();
+    assertEquals("{\"summary\":\"s\",\"source\":\"src\",\"severity\":\"info\",\"timestamp\":\"2018-08-01T02:03:04Z\","
+        + "\"custom_details\":{\"double\":1.5,\"float\":-2.25,\"objectDouble\":3.5,\"objectFloat\":4.25}}", payload.payloadJson());
+  }
+
+  @Test
+  void finiteChangeCustomDetailNumbersHaveExactJson() {
+    final var payload = PagerDutyChangeEventPayload.build()
+        .summary("s")
+        .timestamp(TIMESTAMP)
+        .customDetails("double", 1.5d)
+        .customDetails("float", -2.25f)
+        .create();
+    assertEquals("{\"summary\":\"s\",\"timestamp\":\"2018-08-01T02:03:04Z\",\"custom_details\":{\"double\":1.5,\"float\":-2.25}}",
+        payload.payloadJson());
+  }
+
+  @Test
+  void eventCreateRejectsNonFiniteCustomDetailNumbers() {
+    for (final Number value : List.<Number>of(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+        Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+      final var builder = PagerDutyEventPayload.build()
+          .dedupKey("nonfinite")
+          .summary("s")
+          .source("src")
+          .severity(PagerDutySeverity.info)
+          .timestamp(TIMESTAMP)
+          .customDetails("number", value);
+      assertThrows(IllegalArgumentException.class, builder::create, value.getClass().getSimpleName() + ": " + value);
+    }
+  }
+
+  @Test
+  void changeCreateRejectsNonFiniteCustomDetailNumbers() {
+    for (final Number value : List.<Number>of(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+        Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+      final var builder = PagerDutyChangeEventPayload.build()
+          .summary("s")
+          .timestamp(TIMESTAMP)
+          .customDetails("number", value);
+      assertThrows(IllegalArgumentException.class, builder::create, value.getClass().getSimpleName() + ": " + value);
+    }
+  }
+
+  @Test
+  void eventCreateRejectsNonFiniteObjectCustomDetailNumbers() {
+    for (final Object value : List.of(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+        Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+      final var builder = PagerDutyEventPayload.build()
+          .dedupKey("nonfinite")
+          .summary("s")
+          .source("src")
+          .severity(PagerDutySeverity.info)
+          .timestamp(TIMESTAMP)
+          .customDetails("number", value);
+      assertThrows(IllegalArgumentException.class, builder::create, value.getClass().getSimpleName() + ": " + value);
+    }
+  }
+
+  @Test
+  void changeObjectCustomDetailNumbersRemainStrings() {
+    final var payload = PagerDutyChangeEventPayload.build()
+        .summary("s")
+        .timestamp(TIMESTAMP)
+        .customDetails("double", (Object) Double.NaN)
+        .customDetails("float", (Object) Float.POSITIVE_INFINITY)
+        .create();
+    assertEquals("{\"summary\":\"s\",\"timestamp\":\"2018-08-01T02:03:04Z\",\"custom_details\":{\"double\":\"NaN\",\"float\":\"Infinity\"}}",
+        payload.payloadJson());
   }
 
   @Test

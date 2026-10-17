@@ -63,21 +63,14 @@ grouped by the principle that makes it equivalent.
 Group by the principle that makes them equivalent (see the recurring families
 in HARDENING.md); the baseline CSVs carry the exact keys.
 
-- `# copy-on-write` (payload: both builders' `create` size ternaries ×12 — the
-  `customDetails`, `links` and `images` `size() > 1` arms — plus the `size() == 1`
-  re-copy branch of `customDetailsObject`, `link` and `image`) — single-vs-multi
-  routing in the copy-on-write collections. The `create` wrappers only ever
-  wrap collections that are already immutable at size ≤ 1 (`List.of` /
-  `Map.copyOf`), so `unmodifiable*` vs as-is is indistinguishable; the
-  size==1 setter branches only re-copy content-equal maps/lists. The
-  mutable-escape direction (`ORDER_ELSE`, multi-entry as-is) is killed by
-  the immutability tests — these are the content-equal siblings.
-- `# defensive-copy` (payload: the `PagerDutyChangeEventPayloadBuilder` prototype
-  constructor `<init>`, the `customDetails`, `links` and `images` copy ternaries ×3) —
-  the `isEmpty()` branch of each prototype-copy ternary: an empty non-null
-  prototype collection is routed to the size-check chain and lands on
-  `Map.copyOf`/`List.copyOf` of an empty collection — content-equal to the
-  `Map.of()`/`List.of()` the guard returns. Equal but not identical.
+- `# copy-on-write` (payload: the `size() == 1` re-copy branch of
+  `customDetailsObject`, `link` and `image`) — forcing the re-copy branch
+  also copies larger mutable maps/lists, preserving their content and subsequent
+  builder updates. Skipping the copy at size one instead attempts to mutate
+  `Map.of`/`List.of` and is killed by the chained-add tests. Both builders'
+  `create` methods take immutable snapshots independently of these setter branches;
+  snapshot and accessor-immutability tests cover empty, single-entry and larger
+  collections, including a singleton map produced by replacing the same key.
 - `# truncation-boundary` (payload: `summary`, the truncation guard) — `length() > 1_024`
   mutated to `>=`: at exactly 1024 chars `substring(0, 1024)` returns the
   same instance (`summaryExactly1024IsNotCopied` pins the identity), so the

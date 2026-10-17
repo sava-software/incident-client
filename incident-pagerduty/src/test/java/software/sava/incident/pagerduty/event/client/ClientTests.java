@@ -8,22 +8,11 @@ import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 final class ClientTests {
-
-  private static final ConcurrentLinkedQueue<HttpServer> HTTP_SERVER_POOL = new ConcurrentLinkedQueue<>();
-
-  static {
-    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-      for (var httpServer = HTTP_SERVER_POOL.poll(); httpServer != null; httpServer = HTTP_SERVER_POOL.poll()) {
-        httpServer.stop(0);
-      }
-    }));
-  }
 
   private ClientTests() {
   }
@@ -38,8 +27,8 @@ final class ClientTests {
 
   private static void runTest(final ClientTest clientTest) {
     final var httpServer = createServer();
-    final var testFuture = createContext(clientTest, httpServer);
     try {
+      final var testFuture = createContext(clientTest, httpServer);
       // Run async within the future in case the future is terminated on the server side.
       // This will ensure an early termination and proper reporting in the event of a server side exception.
       testFuture.completeAsync(() -> {
@@ -51,7 +40,7 @@ final class ClientTests {
         return null;
       }).join();
     } finally {
-      HTTP_SERVER_POOL.add(httpServer);
+      httpServer.stop(0);
     }
   }
 
@@ -59,7 +48,7 @@ final class ClientTests {
                                                        final HttpServer httpServer) {
     final var testFuture = new CompletableFuture<Void>();
     clientTest.createContext(httpServer, (path, httpHandler) -> {
-          final var httpContext = httpServer.createContext(path, httpExchange -> {
+          httpServer.createContext(path, httpExchange -> {
                 try {
                   httpHandler.handle(httpExchange);
                 } catch (final Throwable throwable) {
@@ -67,19 +56,14 @@ final class ClientTests {
                 }
               }
           );
-          testFuture.whenComplete((_void, throwable) -> httpServer.removeContext(httpContext));
         }
     );
     return testFuture;
   }
 
   private static HttpServer createServer() {
-    var httpServer = HTTP_SERVER_POOL.poll();
-    if (httpServer != null) {
-      return httpServer;
-    }
     try {
-      httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+      final var httpServer = HttpServer.create(new InetSocketAddress(0), 0);
       httpServer.setExecutor(ForkJoinPool.commonPool());
       httpServer.start();
       return httpServer;

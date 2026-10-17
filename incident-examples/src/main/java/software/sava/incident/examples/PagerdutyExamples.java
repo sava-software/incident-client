@@ -12,22 +12,17 @@ import static java.time.ZoneOffset.UTC;
 public final class PagerdutyExamples {
 
   static void main(final String[] args) {
-    final int numArgs = args.length;
-    if (numArgs == 0) {
-      System.err.println("Usage: <routing_key> <auth_token>");
+    if (args.length == 0) {
+      System.err.println("Usage: <routing_key>");
       System.exit(1);
       return;
     }
 
     final var routingKey = args[0];
-    final var clientBuilder = PagerDutyEventClient.clientBuilder()
+    final var client = PagerDutyEventClient.clientBuilder()
         .defaultClientName("sava-example")
-        .defaultRoutingKey(routingKey);
-    if (numArgs > 1) {
-      final var authToken = args[1];
-      clientBuilder.authToken(authToken);
-    }
-    final var client = clientBuilder.createClient();
+        .defaultRoutingKey(routingKey)
+        .createClient();
 
     final var bigInteger = new BigInteger("20988936657440586486151264256610222593863921");
     final var payload = PagerDutyEventPayload.build()

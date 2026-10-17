@@ -47,7 +47,11 @@ public interface PagerDutyChangeEventPayload {
 
   interface Builder extends PagerDutyChangeEventPayload {
 
-
+    /// Creates a payload with immutable snapshots of the custom-details map and
+    /// attachment lists. The contained values and attachment objects are not copied.
+    ///
+    /// @throws IllegalArgumentException if a numeric custom detail is a nonfinite
+    ///                                  `Double` or `Float`
     PagerDutyChangeEventPayload create();
 
     Builder summary(final String summary);

@@ -21,7 +21,8 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// custom-detail keys and values round-trip verbatim.
 ///
 /// The input is split on NUL bytes into field values; the leading byte selects the
-/// severity.
+/// severity and floating-point case. The first eight bytes after it also supply raw
+/// IEEE 754 bits, without changing the NUL-delimited string fields.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///
@@ -35,6 +36,26 @@ public final class PagerDutyPayloadFuzz {
     if (data.length == 0) {
       return;
     }
+    long bits = 0;
+    for (int i = 1; i < Math.min(data.length, 9); ++i) {
+      bits = bits << 8 | (data[i] & 0xFFL);
+    }
+    final int numericCase = (data[0] & 0xFF) >>> 2;
+    assertNumber(switch (numericCase) {
+      case 1 -> Double.NaN;
+      case 2 -> Double.POSITIVE_INFINITY;
+      case 3 -> Double.NEGATIVE_INFINITY;
+      case 4 -> -0.0d;
+      default -> Double.longBitsToDouble(bits);
+    });
+    assertNumber(switch (numericCase) {
+      case 1 -> Float.NaN;
+      case 2 -> Float.POSITIVE_INFINITY;
+      case 3 -> Float.NEGATIVE_INFINITY;
+      case 4 -> -0.0f;
+      default -> Float.intBitsToFloat((int) bits);
+    });
+    // Numeric rejection must not bypass the existing arbitrary-string oracle.
     final var parts = new String(data, 1, data.length - 1, UTF_8).split(DELIMITER, -1);
     final var summary = part(parts, 0);
     if (summary == null || summary.isBlank()) {
@@ -112,6 +133,64 @@ public final class PagerDutyPayloadFuzz {
     assertOptionalField(source, c.source, "change source");
     assertEq(TIMESTAMP.toString(), c.timestamp, "change timestamp");
     assertEq(expectedDetails, c.customDetails, "change custom_details");
+  }
+
+  private static void assertNumber(final Number value) {
+    final var event = PagerDutyEventPayload.build()
+        .dedupKey("numeric-fuzz").timestamp(TIMESTAMP)
+        .summary("numeric fuzz").source("fuzz-source").severity(PagerDutySeverity.values()[0])
+        .customDetails("number", value);
+    final var change = PagerDutyChangeEventPayload.build()
+        .timestamp(TIMESTAMP).summary("numeric fuzz").customDetails("number", value);
+    if (Double.isFinite(value.doubleValue())) {
+      assertNumberRoundTrip(event.create(), value);
+      assertNumberRoundTrip(change.create(), value);
+    } else {
+      assertNonFiniteRejected(event::create);
+      assertNonFiniteRejected(change::create);
+    }
+  }
+
+  private static void assertNonFiniteRejected(final Runnable create) {
+    try {
+      create.run();
+    } catch (final IllegalArgumentException expected) {
+      return;
+    }
+    throw new AssertionError("create accepted a non-finite custom detail");
+  }
+
+  private static void assertNumberRoundTrip(final PagerDutyChangeEventPayload payload, final Number expected) {
+    final var json = payload.payloadJson();
+    assertNoRawControlChars(json);
+    final boolean[] found = {false};
+    JsonIterator.parse(json).testObject((buf, offset, len, ji) -> {
+      if (fieldEquals("custom_details", buf, offset, len)) {
+        ji.testObject((detailBuf, detailOffset, detailLen, detail) -> {
+          if (!fieldEquals("number", detailBuf, detailOffset, detailLen)
+              || detail.whatIsNext() != ValueType.NUMBER) {
+            throw new AssertionError("expected numeric custom detail");
+          }
+          // Parse at the original precision: widening Float's decimal text to Double
+          // need not equal widening its binary value. Boxed equality also pins -0.0.
+          final Number parsed;
+          if (expected instanceof Float) {
+            parsed = detail.readFloat();
+          } else {
+            parsed = detail.readDouble();
+          }
+          assertEq(expected, parsed, "numeric custom detail");
+          found[0] = true;
+          return true;
+        });
+      } else {
+        ji.skip();
+      }
+      return true;
+    });
+    if (!found[0]) {
+      throw new AssertionError("missing numeric custom detail");
+    }
   }
 
   private static final class Parsed {

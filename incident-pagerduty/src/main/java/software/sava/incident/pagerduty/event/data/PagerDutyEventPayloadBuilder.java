@@ -50,9 +50,9 @@ final class PagerDutyEventPayloadBuilder
         severity,
         timestamp,
         component, group, type,
-        customDetails.size() > 1 ? Collections.unmodifiableMap(customDetails) : customDetails,
-        links.size() > 1 ? Collections.unmodifiableList(links) : links,
-        images.size() > 1 ? Collections.unmodifiableList(images) : images,
+        Collections.unmodifiableMap(new LinkedHashMap<>(customDetails)),
+        List.copyOf(links),
+        List.copyOf(images),
         json);
   }
 
