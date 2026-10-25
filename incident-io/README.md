@@ -193,6 +193,10 @@ when `incidentTimestampId` names the workspace's incident timestamp to set — i
 has no id-free slot for it, and stamps its own `created_at` either way. Unset, or with a
 blank id, the alert timestamp is dropped.
 
+When reporting through `IncidentService`, a null or blank alert key is generated once
+per report and reused across retries. Separate report calls receive separate keys;
+provide an explicit key to deduplicate across calls.
+
 incident.io incidents are resolved by status updates, which this client does not
 support: `supportsResolve()` returns `false` and `resolveIncident(String)` fails the
 returned future with an `UnsupportedOperationException`.

@@ -2,19 +2,23 @@ package software.sava.incident.io;
 
 import org.junit.jupiter.api.Test;
 import software.sava.incident.core.api.IncidentAlert;
+import software.sava.incident.core.api.IncidentService;
 import software.sava.incident.core.api.IncidentSeverity;
 import software.sava.incident.io.config.IncidentIoConfig;
 import systems.comodal.jsoniter.JsonIterator;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -26,10 +30,17 @@ final class IncidentIoIncidentClientTests {
 
     private CreateIncidentRequest request;
     private CreateIncidentResponse response;
+    private final List<CreateIncidentRequest> requests = new ArrayList<>();
+    private int failuresRemaining;
 
     @Override
     public CompletableFuture<CreateIncidentResponse> createIncident(final CreateIncidentRequest request) {
       this.request = request;
+      requests.add(request);
+      if (failuresRemaining > 0) {
+        --failuresRemaining;
+        return CompletableFuture.failedFuture(new IOException("Response lost after creating the incident"));
+      }
       return CompletableFuture.completedFuture(response);
     }
 
@@ -52,6 +63,34 @@ final class IncidentIoIncidentClientTests {
         .statusId("status-1")
         .visibility(CreateIncidentRequest.Visibility.PUBLIC)
         .mode(CreateIncidentRequest.Mode.standard);
+  }
+
+  @Test
+  void serviceRetriesReuseTheIncidentIoIdempotencyKey() {
+    for (final String key : new String[]{null, "", " \t", "explicit-key"}) {
+      final var stub = new StubIoClient();
+      stub.failuresRemaining = 1;
+      stub.response = CreateIncidentResponseRecord.parse(JsonIterator.parse("""
+          {"incident":{"id":"inc-retry","reference":"INC-RETRY"}}"""));
+      final var service = IncidentService.createService(builder(stub).createClient());
+      final var alert = IncidentAlert.build()
+          .key(key)
+          .summary("Database unavailable")
+          .severity(IncidentSeverity.CRITICAL)
+          .create();
+
+      final var response = service.reportIncident(alert, 1, 0, 0, TimeUnit.MILLISECONDS).join();
+
+      assertEquals("inc-retry", response.key());
+      assertEquals(2, stub.requests.size());
+      final var original = stub.requests.getFirst();
+      final var retry = stub.requests.getLast();
+      assertEquals(original.idempotencyKey(), retry.idempotencyKey());
+      assertEquals(original.body(), retry.body());
+      if (key != null && !key.isBlank()) {
+        assertEquals(key, original.idempotencyKey());
+      }
+    }
   }
 
   @Test

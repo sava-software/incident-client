@@ -12,9 +12,13 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 final class IncidentServiceTests {
 
   private static final IncidentAlert ALERT = IncidentAlert.build()
+      .key("alert-key")
       .summary("summary")
       .severity(IncidentSeverity.ERROR)
       .create();
@@ -159,9 +164,12 @@ final class IncidentServiceTests {
   private static final class StubClient implements IncidentClient {
 
     private final AtomicInteger calls = new AtomicInteger();
+    private final List<IncidentAlert> reports = new ArrayList<>();
     private final int failures;
     private final boolean canBeRetried;
     private boolean wrapFailures;
+    private boolean supportsResolve = true;
+    private CompletableFuture<IncidentResponse> resolveResult;
     private Supplier<Throwable> failureFactory;
 
     private StubClient(final int failures, final boolean canBeRetried) {
@@ -179,16 +187,21 @@ final class IncidentServiceTests {
 
     @Override
     public CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert) {
+      reports.add(alert);
       return respond(alert.key() == null ? "generated" : alert.key());
     }
 
     @Override
     public boolean supportsResolve() {
-      return true;
+      return supportsResolve;
     }
 
     @Override
     public CompletableFuture<IncidentResponse> resolveIncident(final String key) {
+      if (resolveResult != null) {
+        calls.incrementAndGet();
+        return resolveResult;
+      }
       return respond(key);
     }
 
@@ -204,13 +217,141 @@ final class IncidentServiceTests {
   }
 
   @Test
+  void missingReportKeyIsGeneratedOnceAndPreservesAlertAcrossRetries() {
+    for (final String key : new String[]{null, "", " \t"}) {
+      final var alert = IncidentAlert.build()
+          .key(key)
+          .summary("Database unavailable")
+          .details("Connection refused")
+          .severity(IncidentSeverity.CRITICAL)
+          .source("database-3")
+          .timestamp(ZonedDateTime.parse("2026-10-24T12:00:00+02:00[Europe/Zurich]"))
+          .customDetail("region", "eu-central")
+          .customDetail("attempt", 3)
+          .create();
+      final var client = new StubClient(2, true);
+      final var service = IncidentService.createService(client);
+
+      final var response = service.reportIncident(alert, 2, 0, 0, TimeUnit.MILLISECONDS).join();
+
+      assertEquals(3, client.reports.size());
+      final var firstAttempt = client.reports.getFirst();
+      assertNotNull(firstAttempt.key());
+      assertDoesNotThrow(() -> UUID.fromString(firstAttempt.key()));
+      assertEquals(firstAttempt.key(), response.key());
+      for (final var attempt : client.reports) {
+        assertEquals(firstAttempt.key(), attempt.key());
+        assertEquals(alert.summary(), attempt.summary());
+        assertEquals(alert.details(), attempt.details());
+        assertEquals(alert.severity(), attempt.severity());
+        assertEquals(alert.source(), attempt.source());
+        assertEquals(alert.timestamp(), attempt.timestamp());
+        assertEquals(alert.customDetails(), attempt.customDetails());
+      }
+      assertEquals(key, alert.key(), "The caller's alert must not be changed");
+
+      final var nextResponse = service.reportIncident(alert, 2, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertNotEquals(response.key(), nextResponse.key(), "Separate reports must not deduplicate each other");
+    }
+  }
+
+  private record CallerAlert(String key,
+                             String summary,
+                             String details,
+                             IncidentSeverity severity,
+                             String source,
+                             ZonedDateTime timestamp,
+                             Map<String, Object> customDetails) implements IncidentAlert {
+
+    @Override
+    public String toString() {
+      return "CallerAlert[redacted]";
+    }
+  }
+
+  @Test
+  void callerAlertsWithNullCustomDetailsAreDeliveredWithoutCopying() {
+    for (final String key : new String[]{null, " ", "explicit-key"}) {
+      final var alert = new CallerAlert(key, "summary", "details", IncidentSeverity.ERROR,
+          "source", ZonedDateTime.parse("2026-10-25T12:00:00Z"), Collections.singletonMap("trace", null));
+      final var client = new StubClient(1, true);
+      final var service = IncidentService.createService(client);
+
+      service.reportIncident(alert, 1, 0, 0, TimeUnit.MILLISECONDS).join();
+
+      assertEquals(2, client.reports.size());
+      for (final var attempt : client.reports) {
+        assertNotNull(attempt.key());
+        assertFalse(attempt.key().isBlank());
+        assertSame(alert.customDetails(), attempt.customDetails());
+        assertTrue(attempt.customDetails().containsKey("trace"));
+        assertNull(attempt.customDetails().get("trace"));
+      }
+      assertSame(client.reports.getFirst(), client.reports.getLast());
+      assertEquals(key, alert.key());
+    }
+  }
+
+  @Test
+  void keylessAlertsAreNotRevalidatedByTheService() {
+    final var alerts = List.of(
+        IncidentAlert.build().severity(IncidentSeverity.ERROR),
+        IncidentAlert.build().summary("summary"));
+    for (final var alert : alerts) {
+      final var client = new StubClient(0, true);
+      final var service = IncidentService.createService(client);
+
+      service.reportIncident(alert, 0, 0, 0, TimeUnit.MILLISECONDS).join();
+
+      final var delivered = client.reports.getFirst();
+      assertEquals(alert.summary(), delivered.summary());
+      assertEquals(alert.severity(), delivered.severity());
+      assertNotNull(delivered.key());
+      assertNull(alert.key());
+    }
+  }
+
+  @Test
+  void generatedKeyPreservesCallerRedactionInFailureLogs() {
+    final var alert = new CallerAlert(null, "summary", "secret detail", IncidentSeverity.ERROR,
+        "source", null, Map.of("token", "secret token"));
+    final var client = new StubClient(1, true);
+    final var service = IncidentService.createService(client);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      service.reportIncident(alert, 1, 0, 0, TimeUnit.MILLISECONDS).join();
+
+      assertTrue(recorder.logged("CallerAlert[redacted]"));
+      assertFalse(recorder.logged("secret detail"));
+      assertFalse(recorder.logged("secret token"));
+      assertEquals(alert.toString(), client.reports.getFirst().toString());
+    }
+  }
+
+  @Test
+  void explicitReportKeyAndAlertArePreservedAcrossRetries() {
+    final var alert = IncidentAlert.build()
+        .key(" incident-key ")
+        .summary("Database unavailable")
+        .severity(IncidentSeverity.CRITICAL)
+        .create();
+    final var client = new StubClient(1, true);
+    final var service = IncidentService.createService(client);
+
+    final var response = service.reportIncident(alert, 1, 0, 0, TimeUnit.MILLISECONDS).join();
+
+    assertEquals(" incident-key ", response.key());
+    assertEquals(2, client.reports.size());
+    client.reports.forEach(attempt -> assertSame(alert, attempt));
+  }
+
+  @Test
   void succeedsAfterRetriableFailures() {
     final var client = new StubClient(2, true);
     final var service = IncidentService.createService(client);
     assertSame(client, service.client());
 
     final var response = service.reportIncident(ALERT, 5, 1, 1, TimeUnit.MILLISECONDS).join();
-    assertEquals("generated", response.key());
+    assertEquals("alert-key", response.key());
     assertEquals("success", response.status());
     assertEquals(3, client.calls.get());
   }
@@ -236,6 +377,48 @@ final class IncidentServiceTests {
     assertEquals(2, client.calls.get());
 
     assertNull(service.resolveIncident((String) null, 5, 1, 1, TimeUnit.MILLISECONDS));
+  }
+
+  @Test
+  void unsupportedResolveDelegatesOnceWithoutSchedulingRetries() {
+    final var client = new StubClient(0, true);
+    client.supportsResolve = false;
+    final var cause = new UnsupportedOperationException("No incident lifecycle");
+    client.resolveResult = CompletableFuture.failedFuture(cause);
+    final var service = IncidentService.createService(client);
+    final var delayCalls = new AtomicInteger();
+
+    // Bound the broken implementation too: a regression must not create an endless retry loop.
+    final var result = service.resolveIncident("key-unsupported", attempt -> {
+      delayCalls.incrementAndGet();
+      return attempt < 2 ? 0 : -1;
+    }, TimeUnit.MILLISECONDS);
+
+    assertSame(client.resolveResult, result);
+    assertSame(cause, assertThrows(CompletionException.class, result::join).getCause());
+    assertEquals(1, client.calls.get());
+    assertEquals(0, delayCalls.get());
+    assertNull(service.resolveIncident((String) null, attempt -> {
+      fail("A null key must not schedule a resolve");
+      return 0;
+    }, TimeUnit.MILLISECONDS));
+    assertEquals(1, client.calls.get());
+  }
+
+  @Test
+  void unsupportedResolveFromAReportResponseFailsOnTheFirstAttempt() {
+    final var client = new StubClient(1, true);
+    client.supportsResolve = false;
+    final var cause = new UnsupportedOperationException("No incident lifecycle");
+    client.failureFactory = () -> cause;
+    final var service = IncidentService.createService(client);
+
+    // The stub succeeds on a second call so even the old unlimited overload terminates.
+    final var result = service.resolveIncident(IncidentResponse.of("report-key", "ok", null),
+        0, 0, TimeUnit.MILLISECONDS);
+
+    assertSame(cause, assertThrows(CompletionException.class, result::join).getCause());
+    assertEquals(1, client.calls.get());
   }
 
   @Test
@@ -274,8 +457,8 @@ final class IncidentServiceTests {
     assertEquals("k1", service.resolveIncident(IncidentResponse.of("k1", "s", null), 1, 1, TimeUnit.MILLISECONDS)
         .join().key());
     assertNull(service.resolveIncident((IncidentResponse) null, 1, 1, TimeUnit.MILLISECONDS));
-    assertEquals("generated", service.reportIncident(ALERT, 1, 1, TimeUnit.MILLISECONDS).join().key());
-    assertEquals("generated", service.reportIncident(ALERT, java.time.Duration.ofMillis(100), 1, 1, TimeUnit.MILLISECONDS)
+    assertEquals("alert-key", service.reportIncident(ALERT, 1, 1, TimeUnit.MILLISECONDS).join().key());
+    assertEquals("alert-key", service.reportIncident(ALERT, java.time.Duration.ofMillis(100), 1, 1, TimeUnit.MILLISECONDS)
         .join().key());
     assertEquals("k2", service.resolveIncident("k2", 1, 1, TimeUnit.MILLISECONDS).join().key());
     assertEquals("k3", service.resolveIncident("k3", java.time.Duration.ofMillis(100), 1, 1, TimeUnit.MILLISECONDS)

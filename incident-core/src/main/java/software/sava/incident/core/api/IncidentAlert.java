@@ -16,8 +16,9 @@ public interface IncidentAlert {
     return prototype == null ? build() : new IncidentAlertRecord.IncidentAlertBuilder(prototype);
   }
 
-  /// Correlation key: PagerDuty `dedup_key` / incident.io `idempotency_key`. May be null,
-  /// in which case providers that require one generate it.
+  /// Correlation key: PagerDuty `dedup_key` / incident.io `idempotency_key`. May be null
+  /// or blank. [IncidentService] generates a key once per report and reuses it across
+  /// retries; clients called directly apply their own defaults.
   String key();
 
   /// Short, single-line title. Required.

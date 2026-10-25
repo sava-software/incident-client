@@ -74,10 +74,17 @@ final var client = WebhookClient.clientBuilder()
     .createClient();
 ```
 
-`IncidentResponse.key()` echoes the alert's key, `status()` is the receiver's stripped
-response body (`ok` for Slack) or `delivered` when the body is empty, and `url()` is
-null. Non-2xx responses fail with a `WebhookRequestException` whose message carries the
-status and response body but never the endpoint URL — webhook URLs are credentials.
+Direct `reportIncident` calls return the original alert key in `IncidentResponse.key()`.
+When reporting through `IncidentService`, a null or blank key is replaced once per
+logical report with a generated key, stable across retries. That key appears in the
+`GENERIC_JSON` `key` field, the Slack/Telegram `Key:` line, and the response key. The
+Telegram key line counts toward the existing 4096-character text limit and is subject
+to truncation with the rest of the message.
+
+`status()` is the receiver's stripped response body (`ok` for Slack) or `delivered`
+when the body is empty, and `url()` is null. Non-2xx responses fail with a
+`WebhookRequestException` whose message carries the status and response body but never
+the endpoint URL — webhook URLs are credentials.
 
 ## Writing Your Own Provider
 

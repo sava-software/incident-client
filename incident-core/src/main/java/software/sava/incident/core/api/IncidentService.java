@@ -9,6 +9,13 @@ import java.util.function.LongUnaryOperator;
 /// [IncidentClientException] are retried only when [IncidentClientException#canBeRetried()]
 /// holds; transport-level failures are always retried. A retry-delay function maps the
 /// number of failures so far to the next delay, or a negative value to give up.
+///
+/// A report with a null or blank alert key receives a generated key once per service
+/// call, shared by all attempts. The caller's alert is unchanged; a separate report call
+/// gets a new key. The client receives a forwarding view that delegates all non-key
+/// accessors and `toString()` to the original alert. Explicit keys preserve the original
+/// alert instance; supply one if a custom client depends on its concrete type.
+/// Unsupported resolution is delegated once to the client without retries.
 public interface IncidentService {
 
   static IncidentService createService(final IncidentClient client) {

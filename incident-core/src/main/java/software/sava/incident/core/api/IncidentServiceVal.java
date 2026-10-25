@@ -1,5 +1,6 @@
 package software.sava.incident.core.api;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -79,8 +80,12 @@ record IncidentServiceVal(IncidentClient client) implements IncidentService {
   public CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert,
                                                             final LongUnaryOperator retryDelayFn,
                                                             final TimeUnit timeUnit) {
+    final var key = alert.key();
+    final var reportAlert = key == null || key.isBlank()
+        ? new KeyedIncidentAlert(alert, UUID.randomUUID().toString())
+        : alert;
     return retry(
-        () -> client.reportIncident(alert),
+        () -> client.reportIncident(reportAlert),
         () -> format("to report incident:%n  %s", alert),
         0, retryDelayFn, timeUnit
     );
@@ -90,7 +95,13 @@ record IncidentServiceVal(IncidentClient client) implements IncidentService {
   public CompletableFuture<IncidentResponse> resolveIncident(final String key,
                                                              final LongUnaryOperator retryDelayFn,
                                                              final TimeUnit timeUnit) {
-    return key == null ? null : retry(
+    if (key == null) {
+      return null;
+    }
+    if (!client.supportsResolve()) {
+      return client.resolveIncident(key);
+    }
+    return retry(
         () -> client.resolveIncident(key),
         () -> format("to resolve incident with key '%s'.", key),
         0, retryDelayFn, timeUnit

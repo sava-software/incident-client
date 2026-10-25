@@ -13,9 +13,16 @@ import java.util.concurrent.CompletableFuture;
 /// incident POSTs the alert rendered by the configured [WebhookFormat].
 ///
 /// A webhook message is fire-and-forget notification, not incident management — there is
-/// no incident id, permalink, or lifecycle. [IncidentResponse#key()] echoes the alert's
-/// key, [IncidentResponse#status()] is the receiver's stripped response body (`ok` for
-/// Slack) or `delivered` when the body is empty, and [IncidentResponse#url()] is null.
+/// no incident id, permalink, or lifecycle. Direct reporting echoes the original alert
+/// key in [IncidentResponse#key()]. Reporting through
+/// [software.sava.incident.core.api.IncidentService] replaces a null or blank key once
+/// per logical report, keeping the generated key stable across retries. It appears in
+/// the generic JSON `key` field, the Slack/Telegram `Key:` line, and the response key.
+/// The Telegram key line counts toward its 4096-character text limit and may be
+/// truncated with the rest of the message.
+///
+/// [IncidentResponse#status()] is the receiver's stripped response body (`ok` for Slack)
+/// or `delivered` when the body is empty, and [IncidentResponse#url()] is null.
 /// [IncidentClient#supportsResolve()] is false and [IncidentClient#resolveIncident(String)]
 /// fails the returned future with an UnsupportedOperationException.
 public final class WebhookIncidentClient implements IncidentClient {
