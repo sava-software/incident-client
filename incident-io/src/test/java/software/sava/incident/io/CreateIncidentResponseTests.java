@@ -1,6 +1,7 @@
 package software.sava.incident.io;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.time.OffsetDateTime;
@@ -8,10 +9,31 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated("Changes the JVM default locale")
 final class CreateIncidentResponseTests {
+
+  @Test
+  void visibilityUsesApiValuesRegardlessOfDefaultLocale() {
+    final var original = Locale.getDefault();
+    final var originalDisplay = Locale.getDefault(Locale.Category.DISPLAY);
+    final var originalFormat = Locale.getDefault(Locale.Category.FORMAT);
+    try {
+      for (final var locale : List.of(Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("az-AZ"))) {
+        Locale.setDefault(locale);
+        assertAll(locale.toLanguageTag(),
+            () -> assertEquals("public", CreateIncidentResponse.Visibility.PUBLIC.toString()),
+            () -> assertEquals("private", CreateIncidentResponse.Visibility.PRIVATE.toString()));
+      }
+    } finally {
+      Locale.setDefault(original);
+      Locale.setDefault(Locale.Category.DISPLAY, originalDisplay);
+      Locale.setDefault(Locale.Category.FORMAT, originalFormat);
+    }
+  }
 
   private static final String FULL_RESPONSE = """
       {

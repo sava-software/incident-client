@@ -1,15 +1,47 @@
 package software.sava.incident.io;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated("Changes the JVM default locale")
 final class CreateIncidentRequestTests {
+
+  @Test
+  void visibilityUsesApiValuesRegardlessOfDefaultLocale() {
+    final var original = Locale.getDefault();
+    final var originalDisplay = Locale.getDefault(Locale.Category.DISPLAY);
+    final var originalFormat = Locale.getDefault(Locale.Category.FORMAT);
+    try {
+      for (final var locale : List.of(Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("az-AZ"))) {
+        Locale.setDefault(locale);
+        final var publicRequest = CreateIncidentRequest.requestBuilder()
+            .idempotencyKey("locale-test")
+            .visibility(CreateIncidentRequest.Visibility.PUBLIC)
+            .build();
+        final var privateRequest = CreateIncidentRequest.requestBuilder()
+            .idempotencyKey("locale-test")
+            .visibility(CreateIncidentRequest.Visibility.PRIVATE)
+            .build();
+        assertAll(locale.toLanguageTag(),
+            () -> assertEquals("""
+                {"idempotency_key":"locale-test","visibility":"public"}""", publicRequest.body()),
+            () -> assertEquals("""
+                {"idempotency_key":"locale-test","visibility":"private"}""", privateRequest.body()));
+      }
+    } finally {
+      Locale.setDefault(original);
+      Locale.setDefault(Locale.Category.DISPLAY, originalDisplay);
+      Locale.setDefault(Locale.Category.FORMAT, originalFormat);
+    }
+  }
 
   @Test
   void accessors() {

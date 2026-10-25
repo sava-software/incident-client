@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -68,7 +69,7 @@ public interface CreateIncidentRequest extends PostRequest {
 
     @Override
     public String toString() {
-      return this.name().toLowerCase();
+      return this.name().toLowerCase(Locale.ROOT);
     }
   }
 

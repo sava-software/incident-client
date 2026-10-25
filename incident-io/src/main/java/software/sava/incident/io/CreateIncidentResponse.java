@@ -2,6 +2,7 @@ package software.sava.incident.io;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.Locale;
 
 public interface CreateIncidentResponse {
 
@@ -89,7 +90,7 @@ public interface CreateIncidentResponse {
 
     @Override
     public String toString() {
-      return this.name().toLowerCase();
+      return this.name().toLowerCase(Locale.ROOT);
     }
   }
 
