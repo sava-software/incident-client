@@ -1,5 +1,16 @@
 # Changelog
 
+## [25.5.2](https://github.com/sava-software/incident-client/compare/25.5.1...25.5.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **incident-core:** fail unsupported service resolution once without retries ([3e1f4f4](https://github.com/sava-software/incident-client/commit/3e1f4f4deb8061f7ce0c4c3344304674172b21eb))
+* **incident-core:** reuse alert keys across IncidentService retries ([3e1f4f4](https://github.com/sava-software/incident-client/commit/3e1f4f4deb8061f7ce0c4c3344304674172b21eb))
+* **incident-io:** serialize visibility with Locale.ROOT ([f3f83b5](https://github.com/sava-software/incident-client/commit/f3f83b5d5e6a40f9a130fd38f1d86ab42345fd5c))
+* **incident-webhook:** fail resolution of keyless service reports instead of returning null ([3e1f4f4](https://github.com/sava-software/incident-client/commit/3e1f4f4deb8061f7ce0c4c3344304674172b21eb))
+* **incident-webhook:** include generated service keys in messages and responses ([3e1f4f4](https://github.com/sava-software/incident-client/commit/3e1f4f4deb8061f7ce0c4c3344304674172b21eb))
+
 ## [25.5.1](https://github.com/sava-software/incident-client/compare/25.5.0...25.5.1) (2026-10-17)
 
 
