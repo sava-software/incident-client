@@ -78,7 +78,14 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
 - **Timestamps** serialize through `OffsetDateTime` (RFC 3339). Never format a
   `ZonedDateTime` directly — region zones render an invalid `[Area/City]` suffix.
 - PagerDuty field limits enforced client-side: `summary` truncates at 1024 chars;
-  `dedup_key` over 255 chars is rejected.
+  `dedup_key` over 255 chars is refused by the trigger payload builder (the native
+  `PagerDutyEventClient`'s and `PagerDutyService`'s acknowledge and resolve send the key as
+  given); through `IncidentClient` it never reaches the builder:
+  the client and `IncidentService` both shorten a key to the client's declared `maxKeyLength`
+  (255 for PagerDuty, none for incident.io and the webhook formats) through
+  `IncidentClient.boundKey`, the same way on every report and resolve: the key's first
+  characters, a colon and the SHA-256 of the whole key, within the limit in characters as
+  Java counts them (never fewer than the Unicode characters PagerDuty's 255 counts).
 - Optional fields are omitted when null/blank — never serialized as `"null"` or `""`.
 - Response parsing contract: unknown fields are skipped; malformed input fails with a
   `RuntimeException`, never anything else (the fuzz targets enforce this).

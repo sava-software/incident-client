@@ -182,6 +182,7 @@ final class IncidentIoIncidentClientTests {
         "incident_status":{"id":"status-1","name":"Investigating"}}}"""));
     final var client = builder(stub).createClient();
     assertFalse(client.supportsResolve());
+    assertEquals(0, client.maxKeyLength(), "incident.io documents no key limit: none is declared");
     assertEquals(stub.endpoint(), client.endpoint());
 
     final var response = client.reportIncident(IncidentAlert.build()

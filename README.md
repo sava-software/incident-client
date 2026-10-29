@@ -180,6 +180,12 @@ if (incidentClient.supportsResolve()) {
 }
 ```
 
+A correlation key longer than the client's declared limit (`IncidentClient#maxKeyLength()`:
+255 characters for PagerDuty, none for incident.io and the webhook formats) reaches the
+provider shortened by `IncidentClient.boundKey`, to the key's first characters, a colon and
+the SHA-256 of the whole key, the same way on every report and resolve, so an alert may be
+keyed by whatever identifies its subject and resolved by that key or by `response.key()`.
+
 The incident.io adapter maps `IncidentSeverity` values onto workspace severity ids
 supplied at build time, and has no programmatic resolve: `supportsResolve()` returns
 `false` and `resolveIncident(String)` fails the returned future with an

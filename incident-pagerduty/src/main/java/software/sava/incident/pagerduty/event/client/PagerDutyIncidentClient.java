@@ -33,6 +33,13 @@ public final class PagerDutyIncidentClient implements IncidentClient {
     this.client = client;
   }
 
+  /// The payload's `dedup_key` limit, so a key is shortened before it reaches the builder, by
+  /// this client and by [software.sava.incident.core.api.IncidentService] alike.
+  @Override
+  public int maxKeyLength() {
+    return PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH;
+  }
+
   static PagerDutySeverity mapSeverity(final IncidentSeverity severity) {
     return switch (severity) {
       case CRITICAL -> PagerDutySeverity.critical;
@@ -42,10 +49,11 @@ public final class PagerDutyIncidentClient implements IncidentClient {
     };
   }
 
-  static PagerDutyEventPayload toPayload(final IncidentAlert alert) {
+  /// The alert as a payload, its key shortened to `maxKeyLength`, this client's [#maxKeyLength()].
+  static PagerDutyEventPayload toPayload(final IncidentAlert alert, final int maxKeyLength) {
     final var source = alert.source();
     final var builder = PagerDutyEventPayload.build()
-        .dedupKey(alert.key())
+        .dedupKey(IncidentClient.boundKey(alert.key(), maxKeyLength))
         .summary(alert.summary())
         .source(source == null || source.isBlank() ? UNKNOWN_SOURCE : source)
         .severity(mapSeverity(alert.severity()))
@@ -62,7 +70,7 @@ public final class PagerDutyIncidentClient implements IncidentClient {
 
   @Override
   public CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert) {
-    final var payload = toPayload(alert);
+    final var payload = toPayload(alert, maxKeyLength());
     return client.triggerDefaultRouteEvent(payload).thenApply(response ->
         toResponse(response, payload.dedupKey())
     );
@@ -75,7 +83,8 @@ public final class PagerDutyIncidentClient implements IncidentClient {
 
   @Override
   public CompletableFuture<IncidentResponse> resolveIncident(final String key) {
-    return client.resolveEvent(key).thenApply(response -> toResponse(response, key));
+    final var dedupKey = IncidentClient.boundKey(key, maxKeyLength());
+    return client.resolveEvent(dedupKey).thenApply(response -> toResponse(response, dedupKey));
   }
 
   private static IncidentResponse toResponse(final PagerDutyEventResponse response, final String dedupKey) {

@@ -2,6 +2,7 @@ package software.sava.incident.pagerduty.event.client;
 
 import org.junit.jupiter.api.Test;
 import software.sava.incident.core.api.IncidentAlert;
+import software.sava.incident.core.api.IncidentClient;
 import software.sava.incident.core.api.IncidentSeverity;
 import software.sava.incident.pagerduty.event.data.PagerDutyChangeEventPayload;
 import software.sava.incident.pagerduty.event.data.PagerDutyEventPayload;
@@ -87,6 +88,31 @@ final class PagerDutyIncidentClientTests {
   }
 
   @Test
+  void maxKeyLengthIsTheDedupKeyLimit() {
+    assertEquals(255, PagerDutyIncidentClient.createClient(new StubEventClient()).maxKeyLength());
+  }
+
+  /// The client shortens a long key itself, on the report and on the resolve, so a caller using
+  /// it without an IncidentService meets the same provider key and never the builder's refusal.
+  @Test
+  void aLongKeyIsShortenedOnReportAndResolveAlike() {
+    final var stub = new StubEventClient();
+    final var client = PagerDutyIncidentClient.createClient(stub);
+    final var longKey = "Scope Mappings Refused:" + "k".repeat(300);
+    final var expected = IncidentClient.boundKey(longKey, 255);
+    assertEquals(255, expected.length());
+    final var payload = PagerDutyIncidentClient.toPayload(IncidentAlert.build()
+        .key(longKey).summary("s").severity(IncidentSeverity.WARNING).create(), PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH);
+    assertEquals(expected, payload.dedupKey());
+    stub.response = response(null);
+    final var alert = IncidentAlert.build().key(longKey).summary("s").severity(IncidentSeverity.WARNING).create();
+    assertEquals(expected, client.reportIncident(alert).join().key(), "the report's response names the key as sent");
+    assertEquals(expected, stub.triggeredPayload.dedupKey());
+    assertEquals(expected, client.resolveIncident(longKey).join().key(), "the response falls back to the key as sent");
+    assertEquals(expected, stub.resolvedDedupKey);
+  }
+
+  @Test
   void mapSeverity() {
     assertEquals(PagerDutySeverity.critical, PagerDutyIncidentClient.mapSeverity(IncidentSeverity.CRITICAL));
     assertEquals(PagerDutySeverity.error, PagerDutyIncidentClient.mapSeverity(IncidentSeverity.ERROR));
@@ -105,7 +131,7 @@ final class PagerDutyIncidentClientTests {
         .timestamp(TIMESTAMP)
         .customDetail("k1", "v1")
         .customDetail("k2", 2)
-        .create());
+        .create(), PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH);
     assertEquals("dedup-1", payload.dedupKey());
     assertEquals("""
             {"summary":"summary-1","source":"host-1","severity":"warning","timestamp":"2024-03-04T05:06:07Z","custom_details":{"details":"details-1","k1":"v1","k2":2}}""",
@@ -119,7 +145,7 @@ final class PagerDutyIncidentClientTests {
         .summary("summary-2")
         .severity(IncidentSeverity.CRITICAL)
         .timestamp(TIMESTAMP)
-        .create());
+        .create(), PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH);
     // no key -> generated dedup key; no source -> fallback; no details -> no custom_details
     assertEquals(36, payload.dedupKey().length());
     assertEquals("""
@@ -137,7 +163,7 @@ final class PagerDutyIncidentClientTests {
         .severity(IncidentSeverity.ERROR)
         .source("  ")
         .timestamp(TIMESTAMP)
-        .create());
+        .create(), PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH);
     // blank source falls back; blank details are omitted
     assertEquals("""
             {"summary":"summary-b","source":"unknown","severity":"error","timestamp":"2024-03-04T05:06:07Z"}""",

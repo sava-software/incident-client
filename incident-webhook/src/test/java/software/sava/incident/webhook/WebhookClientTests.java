@@ -273,6 +273,7 @@ final class WebhookClientTests {
         .createClient()
         .incidentClient(WebhookFormats.GENERIC_JSON);
     assertFalse(incidentClient.supportsResolve());
+    assertEquals(0, incidentClient.maxKeyLength(), "the webhook formats document no key limit: none is declared");
     final var ex = assertThrows(CompletionException.class, () -> incidentClient.resolveIncident("key-1").join());
     assertInstanceOf(UnsupportedOperationException.class, ex.getCause());
   }

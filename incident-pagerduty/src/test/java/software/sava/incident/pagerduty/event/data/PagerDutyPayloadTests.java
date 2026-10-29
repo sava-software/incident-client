@@ -2,6 +2,7 @@ package software.sava.incident.pagerduty.event.data;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.ZonedDateTime;
@@ -744,5 +745,19 @@ final class PagerDutyPayloadTests {
         .create();
     assertEquals("summary", change.summary());
     assertTrue(change.links().isEmpty());
+  }
+
+  /// The `dedup_key` limit counts characters as Java does, as the incident client's limit does
+  /// (the Events API v2 documentation's Send an Event page gives 255 characters, without saying
+  /// how it counts them): 255 two-byte characters pass, 256 do not.
+  @Test
+  void dedupKeyLimitCountsCharacters() {
+    final var builder = PagerDutyEventPayload.build();
+    final var atTheLimit = "\u00E9".repeat(255);
+    assertEquals(510, atTheLimit.getBytes(StandardCharsets.UTF_8).length);
+    builder.dedupKey(atTheLimit);
+    assertEquals(atTheLimit, builder.dedupKey());
+    final var refusal = assertThrows(IllegalArgumentException.class, () -> builder.dedupKey("\u00E9".repeat(256)));
+    assertEquals("Max length for 'dedup_key' is 255", refusal.getMessage());
   }
 }

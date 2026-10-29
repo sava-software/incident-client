@@ -11,13 +11,19 @@ import java.util.function.LongUnaryOperator;
 /// number of failures so far to the next delay, or a negative value to give up.
 ///
 /// A report with a null or blank alert key receives a generated key once per service
-/// call, shared by all attempts. The caller's alert is unchanged; a separate report call
-/// gets a new key. The client receives a forwarding view that delegates all non-key
-/// accessors and `toString()` to the original alert. Explicit keys preserve the original
-/// alert instance; supply one if a custom client depends on its concrete type.
+/// call, shared by all attempts. A key longer than the client's
+/// [IncidentClient#maxKeyLength()] is shortened the same way on every report and resolve
+/// (its first characters, a colon and the SHA-256 of the whole key), so the provider never
+/// sees one past the limit the client declares, in characters as Java counts them. The
+/// caller's alert is unchanged; a separate report call gets a
+/// new key. Where the key is generated or shortened the client receives a forwarding view
+/// that delegates all non-key accessors and `toString()` to the original alert. Explicit
+/// keys within the limit preserve the original alert instance; supply one if a custom
+/// client depends on its concrete type.
 /// Unsupported resolution is delegated once to the client without retries.
 public interface IncidentService {
 
+  /// Refuses a client whose [IncidentClient#maxKeyLength()] is under the 64-character digest.
   static IncidentService createService(final IncidentClient client) {
     return new IncidentServiceVal(client);
   }

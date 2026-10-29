@@ -169,6 +169,8 @@ final class IncidentServiceTests {
     private final boolean canBeRetried;
     private boolean wrapFailures;
     private boolean supportsResolve = true;
+    private int maxKeyLength;
+    private final List<String> resolvedKeys = new ArrayList<>();
     private CompletableFuture<IncidentResponse> resolveResult;
     private Supplier<Throwable> failureFactory;
 
@@ -197,7 +199,13 @@ final class IncidentServiceTests {
     }
 
     @Override
+    public int maxKeyLength() {
+      return maxKeyLength;
+    }
+
+    @Override
     public CompletableFuture<IncidentResponse> resolveIncident(final String key) {
+      resolvedKeys.add(key);
       if (resolveResult != null) {
         calls.incrementAndGet();
         return resolveResult;
@@ -214,6 +222,108 @@ final class IncidentServiceTests {
     public HttpClient httpClient() {
       return null;
     }
+  }
+
+  private static IncidentAlert keyed(final String key) {
+    return IncidentAlert.build().key(key).summary("Scope mappings refused").severity(IncidentSeverity.WARNING).create();
+  }
+
+  /// A key past the client's limit reaches the provider shortened, the same way on every report
+  /// and on the resolve by the caller's long key, while the caller's alert keeps its key.
+  @Test
+  void aKeyPastTheClientsLimitIsShortenedTheSameWayOnReportAndResolve() {
+    final var client = new StubClient(1, true);
+    client.maxKeyLength = 255;
+    final var service = IncidentService.createService(client);
+    final var longKey = "Scope Mappings Refused:" + "k".repeat(300);
+    final var alert = keyed(longKey);
+
+    final var response = service.reportIncident(alert, 2, 0, 0, TimeUnit.MILLISECONDS).join();
+
+    assertEquals(2, client.reports.size(), "one failure, one success");
+    final var reported = client.reports.getFirst().key();
+    assertEquals(255, reported.length());
+    assertTrue(reported.startsWith("Scope Mappings Refused:kkk"), reported);
+    assertEquals(AlertKeys.bound(longKey, 255), reported);
+    assertEquals(reported, client.reports.get(1).key(), "the shortened key is shared by the attempts");
+    assertEquals(reported, response.key());
+    assertEquals(alert.summary(), client.reports.getFirst().summary(), "the forwarding view carries the alert");
+    assertEquals(longKey, alert.key(), "The caller's alert must not be changed");
+
+    service.resolveIncident(longKey, 1, 0, 0, TimeUnit.MILLISECONDS).join();
+    assertEquals(reported, client.resolvedKeys.getLast(), "a resolve by the long key finds the provider's");
+    service.resolveIncident(response, 0, 0, TimeUnit.MILLISECONDS).join();
+    assertEquals(reported, client.resolvedKeys.getLast(), "a resolve by the response's key is unchanged");
+  }
+
+  /// A client declaring a limit under the 64-character digest, which the shortening refuses, is
+  /// refused when the service is created rather than at its first report; 64, and no limit, are
+  /// taken.
+  @Test
+  void aLimitUnderTheDigestIsRefused() {
+    final var client = new StubClient(0, true);
+    client.maxKeyLength = 63;
+    final var refusal = assertThrows(IllegalArgumentException.class, () -> IncidentService.createService(client));
+    assertEquals("A key limit of 63 is under the 64-character digest: declare 64 or more, or none.", refusal.getMessage());
+    client.maxKeyLength = 64;
+    assertNotNull(IncidentService.createService(client));
+    client.maxKeyLength = 0;
+    assertNotNull(IncidentService.createService(client));
+  }
+
+  /// A client that cannot resolve still receives the key shortened: the one delegation it gets
+  /// names the key the provider knows.
+  @Test
+  void anUnsupportedResolveStillSendsTheShortenedKey() {
+    final var client = new StubClient(0, true);
+    client.supportsResolve = false;
+    client.maxKeyLength = 255;
+    final var longKey = "Scope Mappings Refused:" + "k".repeat(300);
+    IncidentService.createService(client).resolveIncident(longKey, 5, 0, 0, TimeUnit.MILLISECONDS);
+    assertEquals(List.of(AlertKeys.bound(longKey, 255)), client.resolvedKeys);
+  }
+
+  /// A failed report of a key sent as itself is logged under the alert alone.
+  @Test
+  void aPlainReportFailureLogsTheAlertAlone() {
+    final var client = new StubClient(1, true);
+    client.maxKeyLength = 255;
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      IncidentService.createService(client).reportIncident(keyed("plain"), 2, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertTrue(recorder.logged("to report incident:"));
+      assertFalse(recorder.logged("sent with key"), "a key sent as itself is logged once");
+    }
+  }
+
+  /// A failed report of a shortened key is logged under the alert and the key sent, as the
+  /// resolve is.
+  @Test
+  void aShortenedReportFailureLogsTheKeySent() {
+    final var client = new StubClient(1, true);
+    client.maxKeyLength = 255;
+    final var longKey = "Scope Mappings Refused:" + "k".repeat(300);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      IncidentService.createService(client).reportIncident(keyed(longKey), 2, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertTrue(recorder.logged("to report incident, sent with key '" + AlertKeys.bound(longKey, 255) + "'"));
+    }
+  }
+
+  /// A key within the limit, and any key for a client that declares none, reaches the provider as
+  /// the caller's own alert instance.
+  @Test
+  void aKeyWithinTheClientsLimitKeepsTheCallersAlert() {
+    final var bounded = new StubClient(0, true);
+    bounded.maxKeyLength = 255;
+    final var atTheLimit = keyed("k".repeat(255));
+    IncidentService.createService(bounded).reportIncident(atTheLimit, 0, 0, TimeUnit.MILLISECONDS).join();
+    assertSame(atTheLimit, bounded.reports.getFirst());
+
+    final var unbounded = new StubClient(0, true);
+    final var longKey = keyed("k".repeat(1_000));
+    IncidentService.createService(unbounded).reportIncident(longKey, 0, 0, TimeUnit.MILLISECONDS).join();
+    assertSame(longKey, unbounded.reports.getFirst());
+    IncidentService.createService(unbounded).resolveIncident(longKey.key(), 0, 0, TimeUnit.MILLISECONDS).join();
+    assertEquals(longKey.key(), unbounded.resolvedKeys.getLast());
   }
 
   @Test
@@ -324,6 +434,20 @@ final class IncidentServiceTests {
       assertFalse(recorder.logged("secret detail"));
       assertFalse(recorder.logged("secret token"));
       assertEquals(alert.toString(), client.reports.getFirst().toString());
+    }
+  }
+
+  /// A failed report of a generated key is logged under the alert and the key sent, as a
+  /// shortened one is, since the alert does not carry it; before the limit it was logged under
+  /// the alert alone.
+  @Test
+  void aGeneratedKeyFailureLogsTheKeySent() {
+    final var client = new StubClient(1, true);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      IncidentService.createService(client).reportIncident(keyed(null), 2, 0, 0, TimeUnit.MILLISECONDS).join();
+      final var sent = client.reports.getFirst().key();
+      assertDoesNotThrow(() -> UUID.fromString(sent));
+      assertTrue(recorder.logged("to report incident, sent with key '" + sent + "':"));
     }
   }
 
@@ -546,7 +670,23 @@ final class IncidentServiceTests {
     try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
       final var response = service.resolveIncident("key-log", 5, 0, 0, TimeUnit.MILLISECONDS).join();
       assertEquals("key-log", response.key());
-      assertTrue(recorder.logged("to resolve incident with key 'key-log'"));
+      assertTrue(recorder.logged("to resolve incident with key 'key-log'."));
+      assertFalse(recorder.logged("sent as"), "a key sent as itself is logged once");
+    }
+  }
+
+  /// A resolve by a key the provider knows shortened is logged under both, so the caller's key
+  /// finds the line.
+  @Test
+  void aShortenedResolveFailureLogsTheCallersKeyAndTheProviders() {
+    final var client = new StubClient(1, true);
+    client.maxKeyLength = 255;
+    final var service = IncidentService.createService(client);
+    final var longKey = "Scope Mappings Refused:" + "k".repeat(300);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      final var response = service.resolveIncident(longKey, 5, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertEquals(AlertKeys.bound(longKey, 255), response.key());
+      assertTrue(recorder.logged("to resolve incident with key '" + longKey + "', sent as '" + AlertKeys.bound(longKey, 255) + "'"));
     }
   }
 

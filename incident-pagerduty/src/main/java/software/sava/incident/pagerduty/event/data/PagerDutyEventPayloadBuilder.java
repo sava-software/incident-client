@@ -58,8 +58,8 @@ final class PagerDutyEventPayloadBuilder
 
   @Override
   public PagerDutyEventPayload.Builder dedupKey(final String dedupKey) {
-    if (dedupKey != null && dedupKey.length() > 255) {
-      throw new IllegalArgumentException("Max length for 'dedup_key' is 255");
+    if (dedupKey != null && dedupKey.length() > PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH) {
+      throw new IllegalArgumentException("Max length for 'dedup_key' is " + PagerDutyEventPayload.MAX_DEDUP_KEY_LENGTH);
     }
     this.dedupKey = dedupKey;
     return this;

@@ -18,7 +18,9 @@ public interface IncidentAlert {
 
   /// Correlation key: PagerDuty `dedup_key` / incident.io `idempotency_key`. May be null
   /// or blank. [IncidentService] generates a key once per report and reuses it across
-  /// retries; clients called directly apply their own defaults.
+  /// retries; clients called directly apply their own defaults. A key longer than the client's
+  /// [IncidentClient#maxKeyLength()] reaches the provider shortened by
+  /// [IncidentClient#boundKey(String, int)], as a resolve by the caller's key is.
   String key();
 
   /// Short, single-line title. Required.
