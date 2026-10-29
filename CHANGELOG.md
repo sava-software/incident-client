@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.5.3](https://github.com/sava-software/incident-client/compare/25.5.2...25.5.3) (2026-10-29)
+
+
+### Features
+
+* **incident-core:** shorten alert keys to the client's declared limit ([0031a5b](https://github.com/sava-software/incident-client/commit/0031a5b62eed5837cf6507e4cfeeb2b528b8e230))
+
 ## [25.5.2](https://github.com/sava-software/incident-client/compare/25.5.1...25.5.2) (2026-10-26)
 
 
