@@ -47,6 +47,13 @@ build/
 !/gradlew.bat
 !gradle/wrapper/gradle-wrapper.jar
 
+# The dependency verification policy (sava-build's README, "Verifying sava artifacts"): the
+# metadata, its public keyring and the version-scoped key list. None of the three is a type
+# allowed above, and git would drop a policy file without a word.
+!/gradle/verification-metadata.xml
+!/gradle/verification-keyring.keys
+!/gradle/verification/*.txt
+
 # Jazzer seed corpora.
 !**/src/test/resources/fuzz/**/*.bin
 

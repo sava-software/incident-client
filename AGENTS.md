@@ -124,7 +124,8 @@ config and format. No timeout records are tracked in this repository today.
 
 **Ownership:** CI runs `check` only. `:<module>:hardeningCertify` plus an explicit local
 `:<module>:fuzzAll -PmaxFuzzTime=<seconds> -PmaxParallelFuzzTargets=<count>` campaign are
-release-checklist items, run locally with both budgets recorded. Run
+release-checklist items, run locally with both budgets recorded; `verificationKeyStatus`
+from the root is another release-checklist item (Build notes, below). Run
 `:<module>:mutationOwnershipAudit` with the pre-push gate, once per reviewed unpushed
 range, whenever the production-class inventory changes or a suite's target/exclusion rules
 change.
@@ -229,23 +230,50 @@ instruction, not a red build.
 
 ### Build notes
 
-- Gradle resolves the sava-build plugins from the Gradle Plugin Portal or GitHub
-  Packages; GitHub Packages needs the `savaGithubPackagesUsername` /
-  `savaGithubPackagesPassword` Gradle properties.
+- Gradle resolves the sava-build plugins from GitHub Packages only, which needs the
+  `savaGithubPackagesUsername` / `savaGithubPackagesPassword` Gradle properties.
 - This repo pins its toolchain with `javaVersion` in `gradle/sava.properties`, and
   `settings.gradle.kts` applies sava-build's `software.sava.build.feature.jdk-provisioning`
   settings plugin; how that plugin resolves or provisions a JDK is the plugin's to
   document.
+- Every dependency is verified against `gradle/verification-metadata.xml`, the signatures
+  and checksums policy sava-build's `verificationPolicy` task guards as part of `check`
+  (its keyring is `gradle/verification-keyring.keys`, its version-scoped key list
+  `gradle/verification/version-scoped-keys.txt`, and `gradle.properties` carries the
+  declaration `org.gradle.dependency.verification=strict`); the rules and the update
+  procedure, steps 1 to 5, are sava-build's README, "Verifying sava artifacts". Check a
+  dependency or policy change with
+  `./gradlew --no-daemon --no-configuration-cache check resolveVerificationTools` (a reused
+  configuration-cache entry resolves nothing and so verifies nothing); validate a new BOM
+  or parent POM once more from an empty `GRADLE_USER_HOME` that holds only the
+  `org.gradle.java.*` lines of `~/.gradle/gradle.properties`, with the GitHub Packages
+  credentials passed as `ORG_GRADLE_PROJECT_savaGithubPackages*` environment variables,
+  since a warm cache hides metadata a cold one fetches; and sync IntelliJ with download
+  sources on, which alone
+  exercises the `gradle:gradle` rule and the jmh plugin's sources-jar pin. A refusal names
+  the artifact; the README's step 2 and, for a listed key, its section's heading in the
+  list file say what to do, and the files are only ever edited in their own shape. A key is
+  listed exactly when its rule carries a version, so those two edits go together.
+  `verificationKeyStatus` runs outside `check`, after a policy edit and on the release
+  checklist (README, "Key status"). A `-PsavaBuildLocalRepo` build needs
+  `--dependency-verification lenient` (below).
 
 #### Building against an unpublished sava-build change
 
 To drive a sava-build feature or bug fix from this repo, publish sava-build to its local
 test repo and point this build at it with `savaBuildLocalRepo` (the clone path belongs in
-`AGENTS.local.md` or `~/.gradle/gradle.properties`, never in `settings.gradle.kts`):
+`AGENTS.local.md` or `~/.gradle/gradle.properties`, never in `settings.gradle.kts`; a
+blank `-PsavaBuildLocalRepo=` clears an override inherited from there). The test repo's
+artifacts are unsigned, so every such run passes `--dependency-verification lenient`:
+read each lenient run's "Dependency verification failed" report and settle anything
+refused other than `0.0.0-test` before pushing, and never relax the mode in
+`~/.gradle/gradle.properties`, where no guard sees it; the flag's scope and that flow are
+sava-build's README, "Unpublished sava-build" and "Developing sava-build":
 
 ```
 (cd <sava-build> && ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository) \
-  && ./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo
+  && ./gradlew check -PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo \
+       --dependency-verification lenient
 ```
 
 Run `:<module>:hardeningHelp` for the installed-version account of the
@@ -255,7 +283,7 @@ across invocations, never `settings.gradle.kts`.
 
 **Re-publish before every run.** This repo's policy is to chain the publish task and the
 build after each sava-build edit, as the snippet above does. Consult
-`:<module>:hardeningHelp` rather than a copy kept here. When done, drop the property and
+`:<module>:hardeningHelp` rather than a copy kept here. When done, drop the property and the flag, and
 bump the versions in `settings.gradle.kts` to the released sava-build.
 
 ## AGENTS.local.md template
