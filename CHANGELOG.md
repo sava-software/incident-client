@@ -1,5 +1,13 @@
 # Changelog
 
+## [25.5.4](https://github.com/sava-software/incident-client/compare/25.5.3...25.5.4) (2026-11-07)
+
+
+### Bug Fixes
+
+* **build:** upgrade to Gradle 9.9 and scope plugin repositories ([14c823f](https://github.com/sava-software/incident-client/commit/14c823f13c5e4be427afd7a07e0112e14d7d84ca))
+* **deps:** bump solanaBOMVersion to 25.30.49 for sava-rpc's typed HTTP failures ([fa40c55](https://github.com/sava-software/incident-client/commit/fa40c55849841287ce4b8caf1842a45399199be0))
+
 ## [25.5.3](https://github.com/sava-software/incident-client/compare/25.5.2...25.5.3) (2026-10-29)
 
 
