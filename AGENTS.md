@@ -241,16 +241,20 @@ instruction, not a red build.
   (its keyring is `gradle/verification-keyring.keys`, its version-scoped key list
   `gradle/verification/version-scoped-keys.txt`, and `gradle.properties` carries the
   declaration `org.gradle.dependency.verification=strict`); the rules and the update
-  procedure, steps 1 to 5, are sava-build's README, "Verifying sava artifacts". Check a
-  dependency or policy change with
+  procedure are sava-build's README, "Verifying sava artifacts". Check a dependency or
+  policy change with
   `./gradlew --no-daemon --no-configuration-cache check resolveVerificationTools` (a reused
   configuration-cache entry resolves nothing and so verifies nothing); validate a new BOM
   or parent POM once more from an empty `GRADLE_USER_HOME` that holds only the
   `org.gradle.java.*` lines of `~/.gradle/gradle.properties`, with the GitHub Packages
   credentials passed as `ORG_GRADLE_PROJECT_savaGithubPackages*` environment variables,
-  since a warm cache hides metadata a cold one fetches; and sync IntelliJ with download
-  sources on, which alone
-  exercises the `gradle:gradle` rule and the jmh plugin's sources-jar pin. A refusal names
+  since a warm cache hides metadata a cold one fetches. No IDE sync is owed after a policy
+  change, and a session does not ask for one. Only IntelliJ's sync with download sources on
+  exercises the `gradle:gradle` rule and the jmh plugin's sources-jar pin, so a trim keeps
+  them; a session that removes or narrows one, adds or moves an unsigned module's pins
+  without its sources jar's, or bumps the wrapper says so in its report, and a refusal
+  shows in the next sync's output (sava-build's README, "Adopting and updating", its
+  closing paragraph). On the command line a refusal names
   the artifact; the README's step 2 and, for a listed key, its section's heading in the
   list file say what to do, and the files are only ever edited in their own shape. A key is
   listed exactly when its rule carries a version, so those two edits go together.
