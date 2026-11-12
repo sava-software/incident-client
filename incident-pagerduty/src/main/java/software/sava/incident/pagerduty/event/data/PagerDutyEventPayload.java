@@ -15,6 +15,9 @@ public interface PagerDutyEventPayload extends PagerDutyChangeEventPayload {
     return new PagerDutyEventPayloadBuilder();
   }
 
+  /// A builder seeded from `prototype`, or an empty one when it is null; its links and
+  /// images are added as [PagerDutyChangeEventPayload#build(PagerDutyChangeEventPayload)]
+  /// adds them.
   static Builder build(final PagerDutyEventPayload prototype) {
     return prototype == null ? build() : new PagerDutyEventPayloadBuilder(prototype);
   }
@@ -33,6 +36,14 @@ public interface PagerDutyEventPayload extends PagerDutyChangeEventPayload {
 
   interface Builder extends PagerDutyEventPayload, PagerDutyChangeEventPayload.Builder {
 
+    /// Creates a payload as [PagerDutyChangeEventPayload.Builder#create()] does, with the
+    /// same attachment snapshots, and also requires `source` and `severity`. A null or blank
+    /// dedup key is replaced with a random UUID, and kept on this builder as the defaulted
+    /// timestamp is, so a later `create()` repeats both.
+    ///
+    /// @throws NullPointerException     if `summary`, `source` or `severity` is unset
+    /// @throws IllegalArgumentException if a numeric custom detail is a nonfinite
+    ///                                  `Double` or `Float`
     PagerDutyEventPayload create();
 
     PagerDutyEventPayload.Builder dedupKey(final String dedupKey);

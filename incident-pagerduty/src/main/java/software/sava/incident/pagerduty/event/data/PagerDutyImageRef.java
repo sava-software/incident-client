@@ -37,6 +37,8 @@ public interface PagerDutyImageRef {
 
   interface Builder extends PagerDutyImageRef {
 
+    /// @throws NullPointerException     if `src` is null
+    /// @throws IllegalArgumentException if `src` is blank
     PagerDutyImageRef create();
 
     Builder src(final String src);

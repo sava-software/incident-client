@@ -38,24 +38,60 @@ public interface PagerDutyEventClient extends HttpApiClient {
 
   CompletableFuture<PagerDutyEventResponse> resolveEvent(final String routingKey, final String dedupKey);
 
+  /// Triggers `payload` on the default routing key; see
+  /// [#triggerEvent(String, String, String, PagerDutyEventPayload)] for how a builder is handled.
   default CompletableFuture<PagerDutyEventResponse> triggerDefaultRouteEvent(final PagerDutyEventPayload payload) {
     return triggerEvent(defaultRoutingKey(), payload);
   }
 
+  /// Triggers `payload` with the default client name and URL; see
+  /// [#triggerEvent(String, String, String, PagerDutyEventPayload)] for how a builder is handled.
   default CompletableFuture<PagerDutyEventResponse> triggerEvent(final String routingKey,
                                                                  final PagerDutyEventPayload payload) {
     return triggerEvent(defaultClientName(), defaultClientUrl(), routingKey, payload);
   }
 
+  /// Sends a trigger event.
+  ///
+  /// A [PagerDutyEventPayload.Builder] handed here is `create()`d, and the created payload
+  /// is what is sent, so an incomplete builder is refused as `create()` refuses it rather
+  /// than serialized with missing required fields. `create()` is called on the builder
+  /// itself, never on a copy: the builder keeps the dedup key it generated and the
+  /// timestamp it defaulted, so every later hand-off of the same builder, including each
+  /// attempt of a [software.sava.incident.pagerduty.event.service.PagerDutyService] retry,
+  /// sends the same `dedup_key` and timestamp. Do not reuse a builder for a distinct event.
+  ///
+  /// @throws NullPointerException     synchronously, before anything is sent, if
+  ///                                  `routingKey` or `payload` is null
+  /// @throws RuntimeException         synchronously, before anything is sent, whatever the
+  ///                                  builder's `create()` throws
   CompletableFuture<PagerDutyEventResponse> triggerEvent(final String clientName,
                                                          final String clientUrl,
                                                          final String routingKey,
                                                          final PagerDutyEventPayload payload);
 
+  /// Sends `payload` as a change event on the default routing key; see
+  /// [#changeEvent(String, PagerDutyChangeEventPayload)] for how a builder is handled.
   default CompletableFuture<PagerDutyEventResponse> defaultRouteChangeEvent(final PagerDutyChangeEventPayload payload) {
     return changeEvent(defaultRoutingKey(), payload);
   }
 
+  /// Sends a change event.
+  ///
+  /// A [PagerDutyChangeEventPayload.Builder] handed here is `create()`d on the builder
+  /// itself, never on a copy, and the created payload is what is sent, as
+  /// [#triggerEvent(String, String, String, PagerDutyEventPayload)] does: the builder keeps
+  /// its defaulted timestamp, every later hand-off of it sends the same event, and it must
+  /// not be reused for a distinct event. A [PagerDutyEventPayload.Builder] is a change
+  /// builder too and is created by its own rules, so it also requires `source` and
+  /// `severity`, and the event payload it creates is what is sent, exactly as if it had been
+  /// created and passed here. For a change event derived from an event, pass
+  /// `PagerDutyChangeEventPayload.build(payload).create()`.
+  ///
+  /// @throws NullPointerException synchronously, before anything is sent, if `routingKey`
+  ///                              or `payload` is null
+  /// @throws RuntimeException     synchronously, before anything is sent, whatever the
+  ///                              builder's `create()` throws
   CompletableFuture<PagerDutyEventResponse> changeEvent(final String routingKey,
                                                         final PagerDutyChangeEventPayload payload);
 

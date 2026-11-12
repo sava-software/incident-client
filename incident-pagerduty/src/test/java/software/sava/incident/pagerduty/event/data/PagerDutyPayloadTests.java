@@ -747,6 +747,202 @@ final class PagerDutyPayloadTests {
     assertTrue(change.links().isEmpty());
   }
 
+  /// A caller-implemented link: the payload builders must validate it as they validate a
+  /// built-in one, since nothing else does.
+  private record CallerLink(String href, String text) implements PagerDutyLinkRef {
+  }
+
+  /// A caller-implemented image, for the same reason.
+  private record CallerImage(String src, String href, String alt) implements PagerDutyImageRef {
+  }
+
+  /// Property: the Events API v2 schema requires a link's `href` and an image's `src`, so the
+  /// ref builders refuse null with a `NullPointerException` and blank (by `isBlank`, so
+  /// whitespace too) with an `IllegalArgumentException`, both naming the field.
+  @Test
+  void refBuildersRefuseANullOrBlankHrefAndSrc() {
+    final var nullHref = assertThrows(NullPointerException.class, () -> PagerDutyLinkRef.build().text("t").create());
+    assertEquals("'href' is a required link field.", nullHref.getMessage());
+    final var nullSrc = assertThrows(NullPointerException.class, () -> PagerDutyImageRef.build().alt("a").create());
+    assertEquals("'src' is a required image field.", nullSrc.getMessage());
+    for (final var blank : List.of("", " ", "\t\n")) {
+      final var href = assertThrows(IllegalArgumentException.class,
+          () -> PagerDutyLinkRef.build().href(blank).text("t").create());
+      assertEquals("'href' is a required link field.", href.getMessage());
+      final var src = assertThrows(IllegalArgumentException.class,
+          () -> PagerDutyImageRef.build().src(blank).href("h").create());
+      assertEquals("'src' is a required image field.", src.getMessage());
+    }
+    // the other side of the blank boundary: one non-whitespace character is enough
+    assertEquals(" x ", PagerDutyLinkRef.build().href(" x ").create().href());
+    assertEquals(" x ", PagerDutyImageRef.build().src(" x ").create().src());
+  }
+
+  private static PagerDutyEventPayload.Builder eventBuilder() {
+    return PagerDutyEventPayload.build()
+        .dedupKey("attach")
+        .summary("s")
+        .source("src")
+        .severity(PagerDutySeverity.info)
+        .timestamp(TIMESTAMP);
+  }
+
+  private static PagerDutyChangeEventPayload.Builder changeBuilder() {
+    return PagerDutyChangeEventPayload.build().summary("s").timestamp(TIMESTAMP);
+  }
+
+  /// Property: on every path an attachment enters a payload builder (event and change
+  /// builder, `link` and `image`, as a ref builder or as a finished ref), a null argument and
+  /// a null or blank `href`/`src` are refused, and a refused attachment is not added.
+  @Test
+  void everyAttachmentPathRefusesANullArgumentAndANullOrBlankUrl() {
+    final List<Supplier<PagerDutyChangeEventPayload.Builder>> factories = List.of(
+        PagerDutyPayloadTests::eventBuilder, PagerDutyPayloadTests::changeBuilder);
+    for (final var factory : factories) {
+      final var builder = factory.get();
+      final var nullLink = assertThrows(NullPointerException.class, () -> builder.link(null));
+      assertEquals("A link must not be null.", nullLink.getMessage());
+      final var nullImage = assertThrows(NullPointerException.class, () -> builder.image(null));
+      assertEquals("An image must not be null.", nullImage.getMessage());
+
+      // a ref builder with a missing or blank URL
+      assertEquals("'href' is a required link field.", assertThrows(NullPointerException.class,
+          () -> builder.link(PagerDutyLinkRef.build().text("t"))).getMessage());
+      assertEquals("'href' is a required link field.", assertThrows(IllegalArgumentException.class,
+          () -> builder.link(PagerDutyLinkRef.build().href(" "))).getMessage());
+      assertEquals("'src' is a required image field.", assertThrows(NullPointerException.class,
+          () -> builder.image(PagerDutyImageRef.build().alt("a"))).getMessage());
+      assertEquals("'src' is a required image field.", assertThrows(IllegalArgumentException.class,
+          () -> builder.image(PagerDutyImageRef.build().src(" "))).getMessage());
+
+      // a finished, caller-implemented ref with a missing or blank URL
+      assertEquals("'href' is a required link field.", assertThrows(NullPointerException.class,
+          () -> builder.link(new CallerLink(null, "t"))).getMessage());
+      assertEquals("'href' is a required link field.", assertThrows(IllegalArgumentException.class,
+          () -> builder.link(new CallerLink("\t", "t"))).getMessage());
+      assertEquals("'src' is a required image field.", assertThrows(NullPointerException.class,
+          () -> builder.image(new CallerImage(null, "h", "a"))).getMessage());
+      assertEquals("'src' is a required image field.", assertThrows(IllegalArgumentException.class,
+          () -> builder.image(new CallerImage("", "h", "a"))).getMessage());
+
+      assertEquals(List.of(), builder.links(), "a refused link is not added");
+      assertEquals(List.of(), builder.images(), "a refused image is not added");
+
+      // a finished ref with a URL is accepted and held as given
+      final var link = new CallerLink("https://caller.example", null);
+      final var image = new CallerImage("https://caller.example/i.png", null, null);
+      builder.link(link).image(image);
+      assertSame(link, builder.links().getFirst());
+      assertSame(image, builder.images().getFirst());
+      assertEquals("""
+          ,"links":[{"href":"https://caller.example"}]""", builder.create().linksJson());
+    }
+  }
+
+  /// Property: a ref builder is created when it is added, so changing it afterwards changes
+  /// neither the payload builder nor the payload, and what is held is not the builder.
+  @Test
+  void aRefBuilderIsSnapshottedWhenAdded() {
+    final List<Supplier<PagerDutyChangeEventPayload.Builder>> factories = List.of(
+        PagerDutyPayloadTests::eventBuilder, PagerDutyPayloadTests::changeBuilder);
+    for (final var factory : factories) {
+      final var linkBuilder = PagerDutyLinkRef.build().href("https://before.example").text("before");
+      final var imageBuilder = PagerDutyImageRef.build().src("https://before.example/i.png").alt("before");
+      final var builder = factory.get().link(linkBuilder).image(imageBuilder);
+      linkBuilder.href("https://after.example").text("after");
+      imageBuilder.src("https://after.example/i.png").alt("after");
+      final var payload = builder.create();
+      linkBuilder.href(" ");
+      imageBuilder.src(" ");
+
+      assertFalse(builder.links().getFirst() instanceof PagerDutyLinkRef.Builder);
+      assertFalse(builder.images().getFirst() instanceof PagerDutyImageRef.Builder);
+      assertEquals("""
+          ,"links":[{"href":"https://before.example","text":"before"}]""", payload.linksJson());
+      assertEquals("""
+          ,"images":[{"src":"https://before.example/i.png","alt":"before"}]""", payload.imagesJson());
+      assertEquals("https://before.example", builder.links().getFirst().href());
+      assertEquals("https://before.example/i.png", builder.images().getFirst().src());
+    }
+  }
+
+  private static PagerDutyChangeEventPayload callerPrototype(final List<PagerDutyLinkRef> links,
+                                                            final List<PagerDutyImageRef> images) {
+    return new PagerDutyChangeEventPayload() {
+      @Override
+      public ZonedDateTime timestamp() {
+        return TIMESTAMP;
+      }
+
+      @Override
+      public String summary() {
+        return "proto";
+      }
+
+      @Override
+      public String source() {
+        return null;
+      }
+
+      @Override
+      public Map<String, Object> customDetails() {
+        return Map.of();
+      }
+
+      @Override
+      public List<PagerDutyLinkRef> links() {
+        return links;
+      }
+
+      @Override
+      public List<PagerDutyImageRef> images() {
+        return images;
+      }
+
+      @Override
+      public String payloadJson() {
+        return "{}";
+      }
+    };
+  }
+
+  /// Property: `build(prototype)` adds the prototype's attachments through the same path as
+  /// `link`/`image`, so a caller-implemented prototype cannot smuggle in a blank URL, and a
+  /// ref builder it holds is snapshotted.
+  @Test
+  void aPrototypesAttachmentsAreValidatedAndSnapshotted() {
+    final var blankHref = assertThrows(IllegalArgumentException.class, () -> PagerDutyChangeEventPayload.build(
+        callerPrototype(List.of(new CallerLink(" ", "t")), List.of())));
+    assertEquals("'href' is a required link field.", blankHref.getMessage());
+    final var blankSrc = assertThrows(IllegalArgumentException.class, () -> PagerDutyChangeEventPayload.build(
+        callerPrototype(List.of(), List.of(new CallerImage(" ", null, null)))));
+    assertEquals("'src' is a required image field.", blankSrc.getMessage());
+
+    final var linkBuilder = PagerDutyLinkRef.build().href("https://proto.example");
+    final var imageBuilder = PagerDutyImageRef.build().src("https://proto.example/i.png");
+    final var second = new CallerLink("https://second.example", null);
+    final var third = new CallerLink("https://third.example", null);
+    final var copy = PagerDutyChangeEventPayload.build(
+        callerPrototype(List.of(linkBuilder, second, third), List.of(imageBuilder)));
+    linkBuilder.href("https://changed.example");
+    imageBuilder.src("https://changed.example/i.png");
+    final var payload = copy.create();
+    assertEquals("""
+        ,"links":[{"href":"https://proto.example"},{"href":"https://second.example"},{"href":"https://third.example"}]""",
+        payload.linksJson());
+    assertEquals("""
+        ,"images":[{"src":"https://proto.example/i.png"}]""", payload.imagesJson());
+    assertSame(second, payload.links().get(1));
+    assertSame(third, payload.links().get(2));
+
+    // the event builder's prototype constructor goes through the same path
+    final var eventPrototype = eventBuilder()
+        .link(PagerDutyLinkRef.build().href("https://event.example"))
+        .create();
+    final var eventCopy = PagerDutyEventPayload.build(eventPrototype).create();
+    assertEquals(eventPrototype.links(), eventCopy.links());
+  }
+
   /// The `dedup_key` limit counts characters as Java does, as the incident client's limit does
   /// (the Events API v2 documentation's Send an Event page gives 255 characters, without saying
   /// how it counts them): 255 two-byte characters pass, 256 do not.

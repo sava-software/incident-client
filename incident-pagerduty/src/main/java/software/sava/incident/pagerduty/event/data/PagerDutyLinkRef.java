@@ -25,6 +25,8 @@ public interface PagerDutyLinkRef {
 
   interface Builder extends PagerDutyLinkRef {
 
+    /// @throws NullPointerException     if `href` is null
+    /// @throws IllegalArgumentException if `href` is blank
     PagerDutyLinkRef create();
 
     Builder href(final String href);

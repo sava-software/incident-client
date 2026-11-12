@@ -154,12 +154,16 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
                                                                 final String routingKey,
                                                                 final PagerDutyEventPayload payload) {
     Objects.requireNonNull(routingKey, "Routing key is a required field.");
-    final var payloadJson = payload.payloadJson();
-    final var linksJson = payload.linksJson();
-    final var imagesJson = payload.imagesJson();
+    Objects.requireNonNull(payload, "Payload is a required field.");
+    // a builder is created in place, never copied: it keeps the generated dedup key and
+    // defaulted timestamp, so every hand-off of it (each service retry) sends the same event
+    final var event = payload instanceof PagerDutyEventPayload.Builder builder ? builder.create() : payload;
+    final var payloadJson = event.payloadJson();
+    final var linksJson = event.linksJson();
+    final var imagesJson = event.imagesJson();
     final var json = String.format("""
             {"event_action":"trigger","routing_key":"%s","dedup_key":"%s","payload":%s%s%s%s%s}""",
-        escapeJson(routingKey), escapeJson(payload.dedupKey()), payloadJson,
+        escapeJson(routingKey), escapeJson(event.dedupKey()), payloadJson,
         (clientName == null || clientName.isBlank() ? "" : String.format("""
             ,"client":"%s\"""", escapeJson(clientName))),
         (clientUrl == null || clientUrl.isBlank() ? "" : String.format("""
@@ -173,9 +177,12 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
   public CompletableFuture<PagerDutyEventResponse> changeEvent(final String routingKey,
                                                                final PagerDutyChangeEventPayload payload) {
     Objects.requireNonNull(routingKey, "Routing key is a required field.");
-    final var payloadJson = payload.payloadJson();
-    final var linksJson = payload.linksJson();
-    final var imagesJson = payload.imagesJson();
+    Objects.requireNonNull(payload, "Payload is a required field.");
+    // an event builder is a change builder too, and is created by its own rules
+    final var change = payload instanceof PagerDutyChangeEventPayload.Builder builder ? builder.create() : payload;
+    final var payloadJson = change.payloadJson();
+    final var linksJson = change.linksJson();
+    final var imagesJson = change.imagesJson();
     final var json = String.format("""
             {"routing_key":"%s","payload":%s%s%s}""",
         escapeJson(routingKey), payloadJson, linksJson, imagesJson

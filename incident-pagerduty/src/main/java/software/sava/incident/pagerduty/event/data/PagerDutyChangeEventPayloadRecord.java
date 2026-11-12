@@ -83,14 +83,40 @@ record PagerDutyChangeEventPayloadRecord(String summary,
       this.customDetails = customDetails == null
           ? Map.of()
           : new LinkedHashMap<>(customDetails);
+      // each attachment goes through link()/image(), so a prototype's attachments are
+      // validated and its built-in ref builders snapshotted exactly as an added one is
+      this.links = List.of();
       final var links = prototype.links();
-      this.links = links == null
-          ? List.of()
-          : new ArrayList<>(links);
+      if (links != null) {
+        for (final var link : links) {
+          link(link);
+        }
+      }
+      this.images = List.of();
       final var images = prototype.images();
-      this.images = images == null
-          ? List.of()
-          : new ArrayList<>(images);
+      if (images != null) {
+        for (final var image : images) {
+          image(image);
+        }
+      }
+    }
+
+    /// The value [#link] stores: a built-in or caller-implemented [PagerDutyLinkRef.Builder]
+    /// is created, and whatever results must carry a non-blank `href`.
+    static PagerDutyLinkRef normalizeLink(final PagerDutyLinkRef link) {
+      Objects.requireNonNull(link, "A link must not be null.");
+      final var created = link instanceof PagerDutyLinkRef.Builder builder ? builder.create() : link;
+      PagerDutyLinkRefVal.requireHref(created.href());
+      return created;
+    }
+
+    /// The value [#image] stores: a built-in or caller-implemented [PagerDutyImageRef.Builder]
+    /// is created, and whatever results must carry a non-blank `src`.
+    static PagerDutyImageRef normalizeImage(final PagerDutyImageRef image) {
+      Objects.requireNonNull(image, "An image must not be null.");
+      final var created = image instanceof PagerDutyImageRef.Builder builder ? builder.create() : image;
+      PagerDutyImageRefVal.requireSrc(created.src());
+      return created;
     }
 
     @Override
@@ -166,25 +192,27 @@ record PagerDutyChangeEventPayloadRecord(String summary,
 
     @Override
     public Builder link(final PagerDutyLinkRef link) {
+      final var normalized = normalizeLink(link);
       if (links.isEmpty()) {
-        links = List.of(link);
+        links = List.of(normalized);
         return this;
       } else if (links.size() == 1) {
         links = new ArrayList<>(links);
       }
-      links.add(link);
+      links.add(normalized);
       return this;
     }
 
     @Override
     public Builder image(final PagerDutyImageRef image) {
+      final var normalized = normalizeImage(image);
       if (images.isEmpty()) {
-        images = List.of(image);
+        images = List.of(normalized);
         return this;
       } else if (images.size() == 1) {
         images = new ArrayList<>(images);
       }
-      images.add(image);
+      images.add(normalized);
       return this;
     }
 

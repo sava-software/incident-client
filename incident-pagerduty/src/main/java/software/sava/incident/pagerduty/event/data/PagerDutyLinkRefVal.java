@@ -2,6 +2,16 @@ package software.sava.incident.pagerduty.event.data;
 
 record PagerDutyLinkRefVal(String href, String text) implements PagerDutyLinkRef {
 
+  /// The Events API v2 schema requires a link's `href`: null is refused with a
+  /// [NullPointerException], blank with an [IllegalArgumentException].
+  static String requireHref(final String href) {
+    java.util.Objects.requireNonNull(href, "'href' is a required link field.");
+    if (href.isBlank()) {
+      throw new IllegalArgumentException("'href' is a required link field.");
+    }
+    return href;
+  }
+
   @Override
   public String href() {
     return href;
@@ -22,8 +32,7 @@ record PagerDutyLinkRefVal(String href, String text) implements PagerDutyLinkRef
 
     @Override
     public PagerDutyLinkRef create() {
-      java.util.Objects.requireNonNull(href, "'href' is a required link field.");
-      return new PagerDutyLinkRefVal(href, text);
+      return new PagerDutyLinkRefVal(requireHref(href), text);
     }
 
     @Override

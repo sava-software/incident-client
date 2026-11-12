@@ -1,5 +1,6 @@
 package software.sava.incident.pagerduty.event.service;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,9 @@ import software.sava.incident.pagerduty.event.data.PagerDutySeverity;
 import software.sava.incident.pagerduty.exceptions.PagerDutyClientException;
 
 import javax.net.ssl.SSLSession;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -23,12 +27,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 /// Pins the retrying service wrapper. This mirrors `incident-core`'s `IncidentServiceTests`
@@ -695,6 +703,90 @@ final class PagerDutyServiceTests {
     final var triggerWrapped = assertInstanceOf(RuntimeException.class, assertThrows(CompletionException.class,
         service(triggerClient).triggerEvent(EVENT, 5, 0, 0, TimeUnit.MILLISECONDS)::join).getCause());
     assertInstanceOf(TestCheckedClientException.class, triggerWrapped.getCause());
+  }
+
+  /// The service hands the same payload object to the client on every attempt, and the real
+  /// client creates a builder in place, so a retried builder keeps the dedup key (and
+  /// defaulted timestamp) its first attempt generated: a retry dedupes against the original
+  /// event instead of opening a second alert. A stubbed client would never call `create()`,
+  /// so this drives a real one over a `jdk.httpserver` that fails the first attempt with a
+  /// retryable 500.
+  @Test
+  void aRetriedBuilderCarriesOneDedupKeyOnEveryAttempt() throws IOException {
+    final var bodies = new CopyOnWriteArrayList<String>();
+    final var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/", exchange -> {
+      try (exchange) {
+        bodies.add(new String(exchange.getRequestBody().readAllBytes(), UTF_8));
+        final int status = bodies.size() == 1 ? 500 : 202;
+        final var bytes = (status == 500 ? "{}" : """
+            {"status":"success","message":"Event processed"}""").getBytes(UTF_8);
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+      }
+    });
+    server.setExecutor(ForkJoinPool.commonPool());
+    server.start();
+    try {
+      final var address = server.getAddress();
+      final var client = PagerDutyEventClient.clientBuilder()
+          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .defaultRoutingKey("retry-rk")
+          .createClient();
+      final var builder = PagerDutyEventPayload.build()
+          .summary("retry-summary")
+          .source("retry-source")
+          .severity(PagerDutySeverity.critical);
+      final var response = PagerDutyService.build().client(client).eventPrototype(EVENT).create()
+          .triggerEvent(builder, 5, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertEquals("success", response.status());
+      assertEquals(2, bodies.size(), "one failed attempt, one retry");
+      assertEquals(bodies.get(0), bodies.get(1));
+      final var matcher = Pattern.compile("\"dedup_key\":\"([^\"]*)\"").matcher(bodies.get(1));
+      assertTrue(matcher.find(), bodies.get(1));
+      assertEquals(builder.dedupKey(), matcher.group(1));
+      assertTrue(Pattern.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", matcher.group(1)),
+          matcher.group(1));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// The change-event twin of the test above: a change builder without a timestamp is created
+  /// in place on its first attempt, so the retry sends the timestamp that attempt defaulted
+  /// rather than a new one.
+  @Test
+  void aRetriedChangeBuilderCarriesOneTimestampOnEveryAttempt() throws IOException {
+    final var bodies = new CopyOnWriteArrayList<String>();
+    final var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/", exchange -> {
+      try (exchange) {
+        bodies.add(new String(exchange.getRequestBody().readAllBytes(), UTF_8));
+        final int status = bodies.size() == 1 ? 500 : 202;
+        final var bytes = (status == 500 ? "{}" : """
+            {"status":"success","message":"Event processed"}""").getBytes(UTF_8);
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+      }
+    });
+    server.setExecutor(ForkJoinPool.commonPool());
+    server.start();
+    try {
+      final var address = server.getAddress();
+      final var client = PagerDutyEventClient.clientBuilder()
+          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .defaultRoutingKey("retry-rk")
+          .createClient();
+      final var builder = PagerDutyChangeEventPayload.build().summary("s");
+      final var response = PagerDutyService.build().client(client).eventPrototype(EVENT).create()
+          .changeEvent(builder, 5, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertEquals("success", response.status());
+      assertEquals(2, bodies.size(), "one failed attempt, one retry");
+      assertEquals(bodies.get(0), bodies.get(1));
+      assertNotNull(builder.timestamp(), "the caller's builder itself was created");
+    } finally {
+      server.stop(0);
+    }
   }
 
   @Test
