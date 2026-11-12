@@ -12,6 +12,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -25,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class WebhookClientTests {
 
-  private record RecordedRequest(String method, Map<String, List<String>> headers, String body) {
+  /// `rawBody` is the request body exactly as it arrived; `body` is its lenient UTF-8 decode.
+  private record RecordedRequest(String method, Map<String, List<String>> headers, byte[] rawBody, String body) {
   }
 
   /// Single-exchange test server: records the request and replies with `statusCode` and
@@ -44,8 +48,8 @@ final class WebhookClientTests {
     @Override
     public void handle(final HttpExchange exchange) throws IOException {
       try (exchange) {
-        final var body = new String(exchange.getRequestBody().readAllBytes(), UTF_8);
-        requests.add(new RecordedRequest(exchange.getRequestMethod(), exchange.getRequestHeaders(), body));
+        final var rawBody = exchange.getRequestBody().readAllBytes();
+        requests.add(new RecordedRequest(exchange.getRequestMethod(), exchange.getRequestHeaders(), rawBody, new String(rawBody, UTF_8)));
         if (responseBody == null) {
           exchange.sendResponseHeaders(statusCode, -1);
         } else {
@@ -261,6 +265,45 @@ final class WebhookClientTests {
           .create()).join();
       assertNull(response.key());
       assertEquals("delivered", response.status());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// A supplementary character (U+1F6A8, two UTF-16 units) straddling the `sendMessage`
+  /// limit: the text sent is the first 4,095 units, and the body on the wire is strict
+  /// UTF-8 for exactly that JSON, with no lone surrogate half turned into `?`.
+  @Test
+  void telegramTruncationKeepsTheBodyStrictUtf8() throws IOException {
+    final var handler = new RecordingHandler(200, "{\"ok\":true}");
+    final var server = startServer(handler);
+    try {
+      final var incidentClient = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient()
+          .incidentClient(new TelegramTextFormat("chat-1"));
+      final var prefix = "[WARNING] ";
+      // the pair occupies indices 4,095 and 4,096 of the rendered text
+      final var head = "s".repeat(TelegramTextFormat.MAX_TEXT_LENGTH - 1 - prefix.length());
+      incidentClient.reportIncident(IncidentAlert.build()
+          .summary(head + "\uD83D\uDEA8 after the cut")
+          .severity(IncidentSeverity.WARNING)
+          .create()).join();
+
+      final var request = handler.requests.poll();
+      assertNotNull(request);
+      final String decoded;
+      try {
+        decoded = UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(request.rawBody()))
+            .toString();
+      } catch (final CharacterCodingException e) {
+        throw new AssertionError("request body is not strict UTF-8", e);
+      }
+      assertEquals("""
+          {"chat_id":"chat-1","text":"%s%s"}""".formatted(prefix, head), decoded);
     } finally {
       server.stop(0);
     }

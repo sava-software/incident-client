@@ -34,8 +34,9 @@ variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON bo
   applies). The endpoint is the bot's full `sendMessage` URL,
   `https://api.telegram.org/bot<TOKEN>/sendMessage` — the URL carries the credential,
   exactly like a Slack webhook — and `chatId` (a numeric chat id or `@channelusername`)
-  is required configuration. Text over 4096 characters is truncated client-side, since
-  `sendMessage` rejects longer messages outright.
+  is required configuration. Text over 4096 characters is truncated client-side, never
+  between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
+  outright.
 
 Supporting another product (Discord, Google Chat, ...) is one `WebhookFormat`
 implementation plus a factory registration — see

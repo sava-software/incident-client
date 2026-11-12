@@ -16,7 +16,8 @@ import static software.sava.incident.core.json.JsonUtil.escapeJson;
 /// [WebhookFormats] constants do not.
 ///
 /// No `parse_mode` is sent, so the text is plain, and no Telegram markup escaping
-/// applies. Text over [#MAX_TEXT_LENGTH] characters is truncated client-side:
+/// applies. Text over [#MAX_TEXT_LENGTH] characters is truncated client-side, never
+/// between the two halves of a surrogate pair (the cut then keeps one character fewer):
 /// `sendMessage` rejects longer messages outright, and a truncated alert beats an
 /// undelivered one.
 public record TelegramTextFormat(String chatId) implements WebhookFormat {
@@ -34,7 +35,11 @@ public record TelegramTextFormat(String chatId) implements WebhookFormat {
   public String render(final IncidentAlert alert) {
     var text = WebhookFormats.renderPlainText(alert);
     if (text.length() > MAX_TEXT_LENGTH) {
-      text = text.substring(0, MAX_TEXT_LENGTH);
+      // a cut after a high surrogate would send its lone half, which UTF-8 cannot encode
+      final int end = Character.isHighSurrogate(text.charAt(MAX_TEXT_LENGTH - 1))
+          ? MAX_TEXT_LENGTH - 1
+          : MAX_TEXT_LENGTH;
+      text = text.substring(0, end);
     }
     return String.format("""
         {"chat_id":"%s","text":"%s"}""", escapeJson(chatId), escapeJson(text)

@@ -5,9 +5,13 @@ import software.sava.incident.core.api.IncidentAlert;
 import software.sava.incident.core.api.IncidentSeverity;
 import systems.comodal.jsoniter.JsonIterator;
 
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
@@ -101,5 +105,84 @@ final class TelegramTextFormatTests {
     final var json = new TelegramTextFormat("chat-1").render(alert);
     assertEquals("""
         {"chat_id":"chat-1","text":"%s%s"}""".formatted(prefix, summary), json);
+  }
+
+  private static final String PREFIX = "[WARNING] ";
+
+  private static String renderedText(final String json) {
+    final var parsed = new Object() {
+      String text;
+    };
+    JsonIterator.parse(json).testObject((buf, offset, len, ji) -> {
+      if (fieldEquals("text", buf, offset, len)) {
+        parsed.text = ji.readString();
+      } else {
+        ji.skip();
+      }
+      return true;
+    });
+    return parsed.text;
+  }
+
+  private static void assertStrictUtf8(final String json) {
+    try {
+      UTF_8.newEncoder()
+          .onMalformedInput(CodingErrorAction.REPORT)
+          .onUnmappableCharacter(CodingErrorAction.REPORT)
+          .encode(CharBuffer.wrap(json));
+    } catch (final CharacterCodingException e) {
+      throw new AssertionError("rendered body has no strict UTF-8 encoding", e);
+    }
+  }
+
+  /// U+1F6A8 occupies indices 4,095 and 4,096: a cut at the limit would keep only its high
+  /// half, which UTF-8 cannot encode, so the cut moves back one unit.
+  @Test
+  void truncationNeverSplitsASurrogatePair() {
+    final var head = "s".repeat(TelegramTextFormat.MAX_TEXT_LENGTH - 1 - PREFIX.length());
+    final var alert = IncidentAlert.build()
+        .summary(head + "\uD83D\uDEA8 after the cut")
+        .severity(IncidentSeverity.WARNING)
+        .create();
+    final var json = new TelegramTextFormat("chat-1").render(alert);
+    final var text = renderedText(json);
+    assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH - 1, text.length());
+    assertEquals(PREFIX + head, text);
+    assertEquals("""
+        {"chat_id":"chat-1","text":"%s%s"}""".formatted(PREFIX, head), json);
+    assertStrictUtf8(json);
+  }
+
+  /// U+1F6A8 occupies indices 4,094 and 4,095, so its low half is the last unit kept: the
+  /// cut is at the limit and the pair stays whole.
+  @Test
+  void aPairEndingAtTheLimitIsKept() {
+    final var head = "s".repeat(TelegramTextFormat.MAX_TEXT_LENGTH - 2 - PREFIX.length());
+    final var alert = IncidentAlert.build()
+        .summary(head + "\uD83D\uDEA8 after the cut")
+        .severity(IncidentSeverity.WARNING)
+        .create();
+    final var json = new TelegramTextFormat("chat-1").render(alert);
+    final var text = renderedText(json);
+    assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, text.length());
+    assertEquals(PREFIX + head + "\uD83D\uDEA8", text);
+    assertStrictUtf8(json);
+  }
+
+  /// Exactly at the limit is not over it: the text is sent as it is, even when its last
+  /// unit is a high surrogate.
+  @Test
+  void textOfExactlyTheLimitIsSentAsItIsWhateverItsLastChar() {
+    final var summary = "s".repeat(TelegramTextFormat.MAX_TEXT_LENGTH - 1 - PREFIX.length()) + '\uD83D';
+    final var alert = IncidentAlert.build()
+        .summary(summary)
+        .severity(IncidentSeverity.WARNING)
+        .create();
+    assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, PREFIX.length() + summary.length());
+    // compared as the rendered string: re-parsing would UTF-8 encode the lone half first
+    assertEquals("""
+            {"chat_id":"chat-1","text":"%s%s"}""".formatted(PREFIX, summary),
+        new TelegramTextFormat("chat-1").render(alert)
+    );
   }
 }
