@@ -4,12 +4,16 @@ import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /// Pins the event-client builder's own accessors and its request-decorator composition.
-/// The wire tests drive a fully-configured client; these cover the branches that choose
-/// *which* decorator gets installed, and the accessors nothing else reads back.
+/// The wire tests drive a fully-configured client; these cover whether the default
+/// decorator gets installed, that it sets no `Authorization` header, and the accessors
+/// nothing else reads back.
 final class PagerDutyEventClientBuilderTests {
 
   private static HttpRequest.Builder decorate(final PagerDutyEventClient.Builder builder) {
@@ -26,18 +30,22 @@ final class PagerDutyEventClientBuilderTests {
     return builder.build().headers().firstValue(name).orElse(null);
   }
 
+  private static Set<String> headerNames(final HttpRequest.Builder builder) {
+    return builder.build().headers().map().keySet().stream()
+        .map(name -> name.toLowerCase(Locale.ROOT))
+        .collect(Collectors.toSet());
+  }
+
   @Test
   void accessorsReadBackTheConfiguredDefaults() {
     final var builder = PagerDutyEventClient.clientBuilder()
         .defaultClientName("svc")
         .defaultClientUrl("https://svc.example.com")
-        .defaultRoutingKey("rk")
-        .authToken("tok");
+        .defaultRoutingKey("rk");
 
     assertEquals("svc", builder.defaultClientName());
     assertEquals("https://svc.example.com", builder.defaultClientUrl());
     assertEquals("rk", builder.defaultRoutingKey());
-    assertEquals("tok", builder.authToken());
   }
 
   @Test
@@ -60,38 +68,21 @@ final class PagerDutyEventClientBuilderTests {
   }
 
   @Test
-  void withoutAnAuthTokenOnlyContentTypeIsSet() {
+  void theDefaultDecoratorSetsOnlyContentType() {
+    // the Events API authenticates with the body's routing_key, so the default decorator
+    // sets Content-Type and nothing else: in particular no Authorization header
     final var decorated = decorate(PagerDutyEventClient.clientBuilder().defaultRoutingKey("rk"));
     assertEquals("application/json", header(decorated, "Content-Type"));
-    assertNull(header(decorated, "Authorization"),
-        "no token means no Authorization header, not an empty one");
-  }
-
-  @Test
-  void aBlankAuthTokenIsTreatedAsAbsent() {
-    final var decorated = decorate(PagerDutyEventClient.clientBuilder()
-        .defaultRoutingKey("rk")
-        .authToken("   "));
-    assertEquals("application/json", header(decorated, "Content-Type"));
     assertNull(header(decorated, "Authorization"));
-  }
-
-  @Test
-  void anAuthTokenBecomesATokenHeaderAlongsideContentType() {
-    final var decorated = decorate(PagerDutyEventClient.clientBuilder()
-        .defaultRoutingKey("rk")
-        .authToken("abc123"));
-    assertEquals("Token token=abc123", header(decorated, "Authorization"));
-    assertEquals("application/json", header(decorated, "Content-Type"));
+    assertEquals(Set.of("content-type"), headerNames(decorated));
   }
 
   @Test
   void acallerSuppliedDecoratorIsLeftAlone() {
-    // an explicit extendRequest wins: createClient must not replace it with either
-    // header-setting variant, even when an authToken is also present
+    // an explicit extendRequest wins: createClient must not replace it with the
+    // Content-Type decorator
     final var builder = PagerDutyEventClient.clientBuilder()
         .defaultRoutingKey("rk")
-        .authToken("abc123")
         .extendRequest(request -> request.setHeader("X-Custom", "kept"));
     final var client = builder.createClient();
     assertNotNull(client);

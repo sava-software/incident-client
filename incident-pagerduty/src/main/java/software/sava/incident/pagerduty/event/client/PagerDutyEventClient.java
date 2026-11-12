@@ -117,7 +117,6 @@ public interface PagerDutyEventClient extends HttpApiClient {
     private String defaultClientName;
     private String defaultClientUrl;
     private String defaultRoutingKey;
-    private String authToken;
 
     private Builder() {
     }
@@ -128,17 +127,7 @@ public interface PagerDutyEventClient extends HttpApiClient {
         endpoint("https://events.pagerduty.com");
       }
       if (this.extendRequest == null) {
-        if (authToken == null || authToken.isBlank()) {
-          extendRequest(builder -> builder.setHeader("Content-Type", "application/json"));
-        } else {
-          final var authHeader = "Token token=" + authToken;
-          extendRequest(builder -> {
-            builder.setHeader("Authorization", authHeader);
-            builder.setHeader("Content-Type", "application/json");
-            return builder;
-          });
-        }
-
+        extendRequest(builder -> builder.setHeader("Content-Type", "application/json"));
       }
       return new PagerDutyEventClientImpl(
           defaultClientName,
@@ -167,11 +156,6 @@ public interface PagerDutyEventClient extends HttpApiClient {
       return this;
     }
 
-    public Builder authToken(final String authToken) {
-      this.authToken = authToken;
-      return this;
-    }
-
     public String defaultClientName() {
       return defaultClientName;
     }
@@ -182,10 +166,6 @@ public interface PagerDutyEventClient extends HttpApiClient {
 
     public String defaultRoutingKey() {
       return defaultRoutingKey;
-    }
-
-    public String authToken() {
-      return authToken;
     }
   }
 }

@@ -24,7 +24,6 @@ API described [below](#provider-neutral-usage).
 final var client = PagerDutyEventClient.clientBuilder()
     .defaultClientName("CLIENT_NAME")
     .defaultRoutingKey("INTEGRATION_KEY")
-    .authToken("AUTH_TOKEN")
     .createClient();
 
 final var payload = PagerDutyEventPayload.build()
@@ -66,6 +65,9 @@ final var changeEventResponse = changeEventResponseFuture.join();
 PagerDuty limits Events API payloads to 512 KB, so the client refuses any request body over
 `PagerDutyEventClient.MAX_REQUEST_BODY_BYTES` (524,288 UTF-8 bytes) with an
 `IllegalArgumentException` before sending it.
+
+The Events API authenticates with the routing key alone, so the client sends no `Authorization`
+header; a custom endpoint that needs one sets it with `extendRequest`.
 
 ### incident.io
 

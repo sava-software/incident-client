@@ -19,12 +19,13 @@ public final class EventClientTests implements EventClientTest {
       {"status":"success","message":"Event processed","dedup_key":"%s"}""", dedupKey
   );
 
-  private void validateRequest(final HttpExchange httpExchange, final String expectedAuthToken) {
+  private void validateRequest(final HttpExchange httpExchange) {
     assertEquals("POST", httpExchange.getRequestMethod());
     assertNull(httpExchange.getRequestURI().getQuery());
 
     final var headers = httpExchange.getRequestHeaders();
-    assertEquals("Token token=" + expectedAuthToken, headers.getFirst("Authorization"));
+    // the Events API authenticates with the body's routing_key: no Authorization header
+    assertNull(headers.getFirst("Authorization"));
     assertEquals("application/json", headers.getFirst("Content-Type"));
     assertNull(headers.getFirst("X-Routing-Key"));
   }
@@ -34,11 +35,10 @@ public final class EventClientTests implements EventClientTest {
                             final BiConsumer<String, HttpHandler> server) {
     final int port = httpServer.getAddress().getPort();
     final var clientName = "test-" + port;
-    final var authToken = "auth-token-" + port;
     final var routingKey = "routing-key-" + port;
 
     server.accept("/v2/enqueue", httpExchange -> {
-          validateRequest(httpExchange, authToken);
+          validateRequest(httpExchange);
 
           final var body = new String(httpExchange.getRequestBody().readAllBytes());
 
@@ -79,7 +79,7 @@ public final class EventClientTests implements EventClientTest {
     );
 
     server.accept("/v2/change/enqueue", httpExchange -> {
-          validateRequest(httpExchange, authToken);
+          validateRequest(httpExchange);
 
           final var body = new String(httpExchange.getRequestBody().readAllBytes());
           final var expected = String.format("""

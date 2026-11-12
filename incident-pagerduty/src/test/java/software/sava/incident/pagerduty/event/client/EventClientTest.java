@@ -12,7 +12,6 @@ public interface EventClientTest extends ClientTest {
         // wildcard bind on the same port number under parallel module runs
         .endpoint("http://127.0.0.1:" + port)
         .defaultRoutingKey("routing-key-" + port)
-        .authToken("auth-token-" + port)
         .createClient();
     test(client);
   }

@@ -13,15 +13,12 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 public final class PagerDutyConfig extends HttpApiClientConfig {
 
   private final String routingKey;
-  private final String authToken;
 
   private PagerDutyConfig(final URI endpoint,
                           final Duration requestTimeout,
-                          final String routingKey,
-                          final String authToken) {
+                          final String routingKey) {
     super(endpoint, requestTimeout);
     this.routingKey = routingKey;
-    this.authToken = authToken;
   }
 
   public PagerDutyEventClient.Builder createClientBuilder() {
@@ -36,9 +33,6 @@ public final class PagerDutyConfig extends HttpApiClientConfig {
       builder.requestTimeout(requestTimeout);
     }
     builder.defaultRoutingKey(routingKey);
-    if (authToken != null) {
-      builder.authToken(authToken);
-    }
     return builder;
   }
 
@@ -60,14 +54,9 @@ public final class PagerDutyConfig extends HttpApiClientConfig {
     return routingKey;
   }
 
-  public String authToken() {
-    return authToken;
-  }
-
   private static final class Parser extends HttpApiClientConfig.Parser {
 
     private String routingKey;
-    private String authToken;
 
     private Parser(final String prefix) {
       super(prefix);
@@ -77,22 +66,19 @@ public final class PagerDutyConfig extends HttpApiClientConfig {
       if (routingKey == null || routingKey.isBlank()) {
         throw new IllegalStateException("PagerdutyConfig routingKey is required.");
       }
-      return new PagerDutyConfig(endpoint, requestTimeout, routingKey, authToken);
+      return new PagerDutyConfig(endpoint, requestTimeout, routingKey);
     }
 
     @Override
     protected void parseConfig(final Properties properties) {
       super.parseConfig(properties);
       this.routingKey = properties.getProperty(prefix + "routingKey");
-      this.authToken = properties.getProperty(prefix + "authToken");
     }
 
     @Override
     public boolean test(final char[] buf, final int offset, final int len, final JsonIterator ji) {
       if (fieldEquals("routingKey", buf, offset, len)) {
         this.routingKey = ji.readString();
-      } else if (fieldEquals("authToken", buf, offset, len)) {
-        this.authToken = ji.readString();
       } else {
         return super.test(buf, offset, len, ji);
       }
