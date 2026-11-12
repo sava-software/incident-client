@@ -22,8 +22,9 @@ public interface HttpApiClient {
     protected UnaryOperator<HttpRequest.Builder> extendRequest;
     protected BiPredicate<HttpResponse<?>, byte[]> testResponse;
 
+    @SuppressWarnings("unchecked")
     protected final B builder() {
-      //noinspection unchecked
+      // Concrete builders bind B to their own type; Java cannot infer that this is B.
       return (B) this;
     }
 
