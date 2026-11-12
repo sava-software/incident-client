@@ -16,7 +16,8 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
 
 ## `retryAfter/` (regression corpus for `WebhookRetryAfterFuzz`)
 
-The harness reads each input twice: whole, as a failure's body bytes (oracle 1, garbage
+The harness reads each input twice: whole, decoded as UTF-8 and handed to
+`TelegramTextFormat.botApiRetryAfter` and the format's `retryAfter` hook (oracle 1, garbage
 in), and split, as a big-endian `long` in its first eight bytes followed by a UTF-8
 description that it wraps in the Bot API's 429 body (oracle 2, round trip).
 

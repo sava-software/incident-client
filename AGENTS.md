@@ -28,10 +28,10 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   stack; per-product variance is isolated in `WebhookFormat` (built-ins:
   `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`, and the
   stateful `TelegramTextFormat` under `telegram` — chat id from config, Bot API
-  `sendMessage` endpoint). Notification only — no incident lifecycle,
-  `supportsResolve()` is false. One deliberate exception to the isolation: the shared
-  `WebhookRequestException.retryAfter()` also reads a Telegram Bot API error body's
-  `parameters.retry_after`, so it works whatever format posted the request.
+  `sendMessage` endpoint). A format may also read the wait from a failed response's body
+  (`WebhookFormat.retryAfter(String)`); `TelegramTextFormat` reads the Bot API's
+  `parameters.retry_after`. Notification only — no incident lifecycle,
+  `supportsResolve()` is false.
 - `incident-examples/` — runnable usage examples; not published.
 
 ### Provider-neutral API (`software.sava.incident.core.api`)
@@ -49,8 +49,9 @@ provider can be swapped via configuration:
   provider asked for (by default the `Retry-After` header, in either RFC 9110 form:
   delay-seconds, or an HTTP-date measured from the response's own `Date` header, never the
   local clock; incident.io's request exception falls back to its body's
-  `rate_limit.retry_after`, and the webhook request exception to a Telegram Bot API error
-  body's `parameters.retry_after`).
+  `rate_limit.retry_after`, and the webhook request exception to the wait its
+  `WebhookFormat` read from the body, which for `TelegramTextFormat` is the Bot API's
+  `parameters.retry_after`).
 - `IncidentService` — retrying wrapper over any `IncidentClient` (retry-delay function,
   max-retries / give-up-after variants). It waits out a provider's `retryAfter()` before
   the next attempt up to the service's limit (`DEFAULT_MAX_RETRY_AFTER`, one minute, or
@@ -114,8 +115,8 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
 - Optional fields are omitted when null/blank — never serialized as `"null"` or `""`.
 - Response parsing contract: unknown fields are skipped; malformed input fails with a
   `RuntimeException`, never anything else (the response parsers' fuzz targets enforce
-  this). `WebhookRequestException.retryAfter()` is the exception: its body reader never
-  throws, and reads leniently, so any body gives null or a positive wait.
+  this). `TelegramTextFormat.botApiRetryAfter` is the exception: the Bot API error body
+  reader never throws, and reads leniently, so any body gives null or a positive wait.
 
 ## Build, test, and hardening
 
@@ -168,8 +169,9 @@ Conventions to preserve:
   serialized field, extend the fuzz oracle *and* add an exact-string unit test — the
   mutation suites only measure what the unit tests pin down.
 - The response parsers' fuzz targets follow the "garbage in → RuntimeException out"
-  contract; `retryAfter` is the exception, its reader never throws and gives null or a
-  positive wait. Parser seed corpora live under `src/test/resources/fuzz/<target>/`.
+  contract; `retryAfter` is the exception, its reader (`TelegramTextFormat.botApiRetryAfter`)
+  never throws and gives null or a positive wait. Parser seed corpora live under
+  `src/test/resources/fuzz/<target>/`.
 - Every fuzz target here declares a `seedCorpus`. A corpus does two independent jobs:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
   and *regression* (a committed landing place for findings — the `request`, `alertEvent`,

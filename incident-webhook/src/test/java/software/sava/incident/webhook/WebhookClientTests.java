@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -20,6 +21,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
@@ -205,16 +207,22 @@ final class WebhookClientTests {
   private static final String TELEGRAM_TOO_MANY_REQUESTS = """
       {"ok":false,"error_code":429,"description":"Too Many Requests: retry after 35","parameters":{"retry_after":35}}""";
 
+  private static final IncidentAlert ALERT = IncidentAlert.build()
+      .summary("summary-1")
+      .severity(IncidentSeverity.ERROR)
+      .create();
+
   /// A Bot API 429 states the wait in its body; without a `Retry-After` header the failure
-  /// still carries it.
+  /// still carries it, as the Telegram format reads it.
   @Test
   void aTelegramBodyCarriesTheWait() throws IOException {
     final var server = startServer(new RecordingHandler(429, TELEGRAM_TOO_MANY_REQUESTS));
     try {
-      final var client = WebhookClient.clientBuilder()
+      final var incidentClient = WebhookClient.clientBuilder()
           .endpoint(endpoint(server))
-          .createClient();
-      final var ex = assertThrows(CompletionException.class, () -> client.post("{}").join());
+          .createClient()
+          .incidentClient(new TelegramTextFormat("chat-1"));
+      final var ex = assertThrows(CompletionException.class, () -> incidentClient.reportIncident(ALERT).join());
       final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
       assertEquals(429L, cause.errorCode());
       assertTrue(cause.canBeRetried());
@@ -228,15 +236,249 @@ final class WebhookClientTests {
   void aRetryAfterHeaderWinsOverTheTelegramBody() throws IOException {
     final var server = startServer(new RecordingHandler(429, Map.of("Retry-After", "7"), TELEGRAM_TOO_MANY_REQUESTS));
     try {
-      final var client = WebhookClient.clientBuilder()
+      final var incidentClient = WebhookClient.clientBuilder()
           .endpoint(endpoint(server))
-          .createClient();
-      final var ex = assertThrows(CompletionException.class, () -> client.post("{}").join());
+          .createClient()
+          .incidentClient(new TelegramTextFormat("chat-1"));
+      final var ex = assertThrows(CompletionException.class, () -> incidentClient.reportIncident(ALERT).join());
       final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
       assertEquals(Duration.ofSeconds(7), cause.retryAfter());
     } finally {
       server.stop(0);
     }
+  }
+
+  /// The same Bot API 429 body read by nothing: a format without the hook, and the
+  /// format-less post, state no wait.
+  @Test
+  void aTelegramBodyStatesNoWaitWithoutTheTelegramFormat() throws IOException {
+    final var server = startServer(new RecordingHandler(429, TELEGRAM_TOO_MANY_REQUESTS));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      for (final var format : List.of(WebhookFormats.GENERIC_JSON, WebhookFormats.SLACK_TEXT)) {
+        final var ex = assertThrows(CompletionException.class,
+            () -> client.incidentClient(format).reportIncident(ALERT).join());
+        final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+        assertEquals(429L, cause.errorCode(), format.toString());
+        assertEquals(TELEGRAM_TOO_MANY_REQUESTS, cause.body(), format.toString());
+        assertNull(cause.retryAfter(), format.toString());
+      }
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}").join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(429L, cause.errorCode());
+      assertNull(cause.retryAfter());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void postWithTheTelegramFormatCarriesTheWait() throws IOException {
+    final var handler = new RecordingHandler(429, TELEGRAM_TOO_MANY_REQUESTS);
+    final var server = startServer(handler);
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var ex = assertThrows(CompletionException.class,
+          () -> client.post("{\"a\":1}", new TelegramTextFormat("chat-1")).join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(429L, cause.errorCode());
+      assertEquals(Duration.ofSeconds(35), cause.retryAfter());
+      final var request = handler.requests.poll();
+      assertNotNull(request);
+      assertEquals("{\"a\":1}", request.body());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// A format that records what its hook was given and states a fixed wait.
+  private static final class RecordingFormat implements WebhookFormat {
+
+    private final Duration wait;
+    private final ConcurrentLinkedQueue<String> bodies = new ConcurrentLinkedQueue<>();
+
+    private RecordingFormat(final Duration wait) {
+      this.wait = wait;
+    }
+
+    @Override
+    public String render(final IncidentAlert alert) {
+      return "{}";
+    }
+
+    @Override
+    public Duration retryAfter(final String responseBody) {
+      bodies.add(responseBody);
+      return wait;
+    }
+  }
+
+  @Test
+  void aCustomFormatReadsTheExactBody() throws IOException {
+    final var responseBody = "{\"error\":\"slow down\",\"wait\":\"é\"}\n";
+    final var server = startServer(new RecordingHandler(503, responseBody));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var wait = Duration.ofSeconds(42);
+      final var format = new RecordingFormat(wait);
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}", format).join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(List.of(responseBody), List.copyOf(format.bodies));
+      assertSame(wait, cause.retryAfter());
+      assertEquals(503L, cause.errorCode());
+      assertEquals(responseBody, cause.body());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// No response body reaches the hook as the empty string.
+  @Test
+  void aCustomFormatReadsAnEmptyBodyAsEmpty() throws IOException {
+    final var server = startServer(new RecordingHandler(429, null));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var format = new RecordingFormat(Duration.ofSeconds(3));
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}", format).join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(List.of(""), List.copyOf(format.bodies));
+      assertEquals(Duration.ofSeconds(3), cause.retryAfter());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// A hook that throws cannot hide the receiver's failure: it states no wait.
+  @Test
+  void aThrowingFormatStatesNoWait() throws IOException {
+    final var server = startServer(new RecordingHandler(429, TELEGRAM_TOO_MANY_REQUESTS));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var format = new WebhookFormat() {
+        @Override
+        public String render(final IncidentAlert alert) {
+          return "{}";
+        }
+
+        @Override
+        public Duration retryAfter(final String responseBody) {
+          throw new IllegalStateException("faulty format");
+        }
+      };
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}", format).join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(429L, cause.errorCode());
+      assertEquals(TELEGRAM_TOO_MANY_REQUESTS, cause.body());
+      assertNull(cause.retryAfter());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void aSuccessNeverCallsTheHook() throws IOException {
+    final var server = startServer(new RecordingHandler(200, TELEGRAM_TOO_MANY_REQUESTS));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var format = new RecordingFormat(Duration.ofSeconds(3));
+      assertEquals(TELEGRAM_TOO_MANY_REQUESTS, client.post("{}", format).join());
+      assertEquals(List.of(), List.copyOf(format.bodies));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void postRequiresAFormat() {
+    final var client = WebhookClient.clientBuilder()
+        .endpoint("http://127.0.0.1:9/unused")
+        .createClient();
+    final var ex = assertThrows(NullPointerException.class, () -> client.post("{}", null));
+    assertEquals("'format' is required.", ex.getMessage());
+  }
+
+  /// A [WebhookClient] implementing only [WebhookClient#post(String)], recording the JSON
+  /// it was given and returning one fixed future.
+  private static final class PostOnlyClient implements WebhookClient {
+
+    private final CompletableFuture<String> future = new CompletableFuture<>();
+    private final ConcurrentLinkedQueue<String> posted = new ConcurrentLinkedQueue<>();
+
+    @Override
+    public CompletableFuture<String> post(final String jsonBody) {
+      posted.add(jsonBody);
+      return future;
+    }
+
+    @Override
+    public URI endpoint() {
+      return URI.create("http://127.0.0.1:9/unused");
+    }
+
+    @Override
+    public HttpClient httpClient() {
+      return null;
+    }
+  }
+
+  @Test
+  void theDefaultFormatPostDelegatesToPost() {
+    final var client = new PostOnlyClient();
+    final var format = new RecordingFormat(Duration.ofSeconds(3));
+    assertSame(client.future, client.post("{\"a\":1}", format));
+    assertEquals(List.of("{\"a\":1}"), List.copyOf(client.posted));
+    assertEquals(List.of(), List.copyOf(format.bodies));
+
+    final var ex = assertThrows(NullPointerException.class, () -> client.post("{}", null));
+    assertEquals("'format' is required.", ex.getMessage());
+    assertEquals(List.of("{\"a\":1}"), List.copyOf(client.posted));
+  }
+
+  @Test
+  void reportIncidentPostsWithItsOwnFormat() {
+    final var posts = new ConcurrentLinkedQueue<Object[]>();
+    final var client = new WebhookClient() {
+      @Override
+      public CompletableFuture<String> post(final String jsonBody) {
+        throw new AssertionError("the adapter must post with its format");
+      }
+
+      @Override
+      public CompletableFuture<String> post(final String jsonBody, final WebhookFormat format) {
+        posts.add(new Object[]{jsonBody, format});
+        return CompletableFuture.completedFuture("ok");
+      }
+
+      @Override
+      public URI endpoint() {
+        return URI.create("http://127.0.0.1:9/unused");
+      }
+
+      @Override
+      public HttpClient httpClient() {
+        return null;
+      }
+    };
+    final var format = new TelegramTextFormat("chat-1");
+    final var response = client.incidentClient(format).reportIncident(ALERT).join();
+    assertEquals("ok", response.status());
+    final var post = posts.poll();
+    assertNotNull(post);
+    assertEquals(format.render(ALERT), post[0]);
+    assertSame(format, post[1]);
+    assertNull(posts.poll());
   }
 
   /// 300 is the first non-success status: redirects are not followed as deliveries.

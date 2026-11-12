@@ -7,9 +7,8 @@ posts, such as a [Slack incoming webhook](https://docs.slack.dev/messaging/sendi
 A webhook message is fire-and-forget notification, not incident management: there is no
 incident id, permalink, or lifecycle, and `supportsResolve()` is `false`. Transport,
 configuration, and error handling are shared across all formats; the only per-product
-variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON body. One
-deliberate exception sits in the shared error handling: a failure also reads the wait
-from a Telegram Bot API error body, whatever format posted the request.
+variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON body and
+may read the wait a failed response's body asks for.
 
 ## Formats
 
@@ -38,7 +37,9 @@ from a Telegram Bot API error body, whatever format posted the request.
   exactly like a Slack webhook — and `chatId` (a numeric chat id or `@channelusername`)
   is required configuration. Text over 4096 characters is truncated client-side, never
   between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
-  outright.
+  outright. A failure's wait is read from the Bot API error body's
+  `parameters.retry_after` (`TelegramTextFormat.botApiRetryAfter`, public for a custom
+  format that posts to the Bot API).
 
 Supporting another product (Discord, Google Chat, ...) is one `WebhookFormat`
 implementation plus a factory registration — see
@@ -89,18 +90,23 @@ when the body is empty, and `url()` is null. Non-2xx responses fail with a
 `WebhookRequestException` whose message carries the status and response body but never
 the endpoint URL — webhook URLs are credentials. Its `retryAfter()`, the wait
 `IncidentService` serves before the next attempt, is the `Retry-After` header when it
-parses (delay-seconds, or an HTTP-date measured from the response's `Date`); otherwise,
-when the body is a Telegram Bot API error, `{"ok":false,...,"parameters":{"retry_after":35}}`,
-its `retry_after` in seconds. The Bot API documents the wait in that body; its server
-also sends the header. This reader sits in the shared failure, not in a `WebhookFormat`,
-so it works for a custom format posting to Telegram too.
+parses (delay-seconds, or an HTTP-date measured from the response's `Date`); otherwise
+the wait the request's format read from the response body
+(`WebhookFormat.retryAfter(String)`, null by default; a format that throws a
+`RuntimeException` there states no wait). `TelegramTextFormat` reads a Bot API error,
+`{"ok":false,...,"parameters":{"retry_after":35}}`, as its `retry_after` in seconds; the
+Bot API documents the wait in that body, and its server also sends the header. The
+incident adapter posts with its format; a direct `client.post(json)` reads no wait from the body, and
+`client.post(json, format)` hands the body to `format`.
 
 ## Writing Your Own Provider
 
-`WebhookFormat` is the whole seam: one method rendering an `IncidentAlert` into the JSON
-body. Transport, headers, and error handling never change per platform. In code, a
-format is a lambda — `WebhookFormats.renderPlainText(alert)` supplies the shared
-`[SEVERITY] summary / details / Source: ...` text so chat-style platforms only wrap it:
+`WebhookFormat` is the whole seam: one abstract method rendering an `IncidentAlert` into
+the JSON body, and a `retryAfter(String)` hook, null by default, reading the wait from a
+failed response's body. Transport, headers, and error handling never change per platform.
+In code, a format that only renders is a lambda — `WebhookFormats.renderPlainText(alert)`
+supplies the shared `[SEVERITY] summary / details / Source: ...` text so chat-style
+platforms only wrap it:
 
 ```java
 final WebhookFormat discord = alert -> String.format("""
@@ -110,6 +116,16 @@ final IncidentClient client = WebhookClient.clientBuilder()
     .endpoint("https://discord.com/api/webhooks/...")
     .createClient()
     .incidentClient(discord);
+```
+
+A lambda cannot override the hook, so a product whose failures state a wait in the body
+needs a class; one posting to the Telegram Bot API can reuse its reader:
+
+```java
+@Override
+public Duration retryAfter(final String responseBody) {
+  return TelegramTextFormat.botApiRetryAfter(responseBody);
+}
 ```
 
 To register your own provider id for config-driven use, publish an

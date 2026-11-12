@@ -18,7 +18,8 @@ hardening {
       "software.sava.incident.webhook.WebhookFormat",
       "software.sava.incident.webhook.WebhookFormats",
       "software.sava.incident.webhook.WebhookFormats\$*",
-      "software.sava.incident.webhook.TelegramTextFormat"
+      "software.sava.incident.webhook.TelegramTextFormat",
+      "software.sava.incident.webhook.TelegramTextFormat\$*"
     )
     targetTests = "software.sava.incident.webhook.*Test*"
   }

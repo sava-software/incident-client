@@ -1,17 +1,25 @@
 package software.sava.incident.webhook;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import software.sava.incident.core.api.IncidentAlert;
 import software.sava.incident.core.api.IncidentClient;
+import software.sava.incident.core.api.IncidentClientException;
 import software.sava.incident.core.api.IncidentClientFactory;
 import software.sava.incident.core.api.IncidentSeverity;
 import software.sava.incident.webhook.config.WebhookConfig;
 import systems.comodal.jsoniter.JsonIterator;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Properties;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ForkJoinPool;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static software.sava.incident.core.json.JsonUtil.escapeJson;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
@@ -19,8 +27,9 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// Pins the third-party extension surface — everything here uses only public API, the
 /// way a provider in another jar would: a custom [WebhookFormat] composing
 /// [WebhookFormats#renderPlainText(IncidentAlert)], a stateless provider extending
-/// [BaseWebhookIncidentClientFactory], and a stateful provider composing
-/// [WebhookConfig#parser()] for a field [WebhookConfig] does not carry.
+/// [BaseWebhookIncidentClientFactory], a stateful provider composing
+/// [WebhookConfig#parser()] for a field [WebhookConfig] does not carry, and a format class
+/// overriding [WebhookFormat#retryAfter(String)] to read a product's own failure body.
 final class CustomProviderExtensionTests {
 
   private static final IncidentAlert ALERT = IncidentAlert.build()
@@ -84,6 +93,62 @@ final class CustomProviderExtensionTests {
           escapeJson(roomId), escapeJson(WebhookFormats.renderPlainText(alert))
       );
       return config.createClientBuilder().createClient().incidentClient(format);
+    }
+  }
+
+  /// A product whose failures state the wait in the body, `{"wait_seconds":N}`: a lambda
+  /// cannot override the hook, so the format is a class.
+  static final class WaitingFormat implements WebhookFormat {
+
+    @Override
+    public String render(final IncidentAlert alert) {
+      return String.format("""
+          {"content":"%s"}""", escapeJson(WebhookFormats.renderPlainText(alert)));
+    }
+
+    @Override
+    public Duration retryAfter(final String responseBody) {
+      final var wait = new Object() {
+        long seconds;
+      };
+      JsonIterator.parse(responseBody).testObject((buf, offset, len, fieldJi) -> {
+        if (fieldEquals("wait_seconds", buf, offset, len)) {
+          wait.seconds = fieldJi.readLong();
+        } else {
+          fieldJi.skip();
+        }
+        return true;
+      });
+      return wait.seconds > 0 ? Duration.ofSeconds(wait.seconds) : null;
+    }
+  }
+
+  @Test
+  void aCustomFormatReadsTheWaitFromItsFailureBody() throws IOException {
+    final var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/", exchange -> {
+      try (exchange) {
+        exchange.getRequestBody().readAllBytes();
+        final var body = """
+            {"error":"slow down","wait_seconds":12}""".getBytes(UTF_8);
+        exchange.sendResponseHeaders(429, body.length);
+        exchange.getResponseBody().write(body);
+      }
+    });
+    server.setExecutor(ForkJoinPool.commonPool());
+    server.start();
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint("http://" + server.getAddress().getHostString() + ':' + server.getAddress().getPort() + "/hook")
+          .createClient()
+          .incidentClient(new WaitingFormat());
+      final var ex = assertThrows(CompletionException.class, () -> client.reportIncident(ALERT).join());
+      final var cause = assertInstanceOf(IncidentClientException.class, ex.getCause());
+      assertEquals(429L, cause.errorCode());
+      assertTrue(cause.canBeRetried());
+      assertEquals(Duration.ofSeconds(12), cause.retryAfter());
+    } finally {
+      server.stop(0);
     }
   }
 

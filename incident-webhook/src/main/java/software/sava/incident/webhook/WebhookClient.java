@@ -22,8 +22,21 @@ public interface WebhookClient extends HttpApiClient {
 
   /// POSTs `jsonBody` to the configured endpoint with `Content-Type: application/json`.
   /// Completes with the raw UTF-8 response body on a 2xx status, and fails with a
-  /// `WebhookRequestException` on any other.
+  /// `WebhookRequestException` on any other, whose wait is only the `Retry-After` header's:
+  /// no body is read for one; see [#post(String, WebhookFormat)].
   CompletableFuture<String> post(final String jsonBody);
+
+  /// As [#post(String)], and a non-2xx failure also carries the wait `format` reads from the
+  /// response body ([WebhookFormat#retryAfter(String)]); a `Retry-After` header that parses
+  /// still wins. Throws a NullPointerException at once for a null `format`.
+  ///
+  /// The default ignores `format` beyond that null check and returns [#post(String)]'s
+  /// future, so its failures state only the header's wait: an implementation that builds
+  /// its own failures overrides this to hand `format` the body.
+  default CompletableFuture<String> post(final String jsonBody, final WebhookFormat format) {
+    Objects.requireNonNull(format, "'format' is required.");
+    return post(jsonBody);
+  }
 
   /// Adapts this client to the provider-neutral [IncidentClient], rendering alerts with
   /// `format`; see [WebhookIncidentClient].

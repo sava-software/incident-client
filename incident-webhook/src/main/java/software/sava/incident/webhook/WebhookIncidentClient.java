@@ -51,7 +51,7 @@ public final class WebhookIncidentClient implements IncidentClient {
 
   @Override
   public CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert) {
-    return client.post(format.render(alert)).thenApply(responseBody ->
+    return client.post(format.render(alert), format).thenApply(responseBody ->
         IncidentResponse.of(
             alert.key(),
             responseBody.isBlank() ? DELIVERED : responseBody.strip(),
