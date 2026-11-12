@@ -16,8 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME;
-
 /// A non-2xx incident.io response, carrying the error envelope and optional structured
 /// diagnostics. [#errors()] exposes readable messages; [#errorDetails()] also preserves
 /// each error's code, metadata, and source location.
@@ -101,10 +99,14 @@ public final class IncidentIoRequestException extends RuntimeException implement
     return rateLimit;
   }
 
-  /// The wait incident.io asked for: the `Retry-After` header when it parses, as the schema
-  /// prefers; otherwise, when [RateLimit#retryAfter()] parses as an RFC 3339 instant and the
-  /// response carries an IMF-fixdate `Date` header, the time from that `Date` to the instant,
-  /// or [Duration#ZERO] when it is not ahead; otherwise null.
+  /// The wait incident.io asked for: the `Retry-After` header when it parses, as delay-seconds
+  /// or as exactly an IMF-fixdate ([IncidentClientException#retryAfter(HttpResponse)] states
+  /// the rule and its limits), as the schema prefers; otherwise, when [RateLimit#retryAfter()]
+  /// parses as an RFC 3339 instant and the response carries a `Date` header that is exactly an
+  /// IMF-fixdate by the same rule ([IncidentClientException#responseDate(HttpResponse)]), the
+  /// time from that `Date` to the instant, or [Duration#ZERO] when it is not ahead; otherwise
+  /// null. A header that only a lenient reader would take as a date, such as one with a
+  /// two-digit year, does not parse and falls through to the body.
   ///
   /// incident.io documents the header for API-key requests only, and an alert-source 429
   /// states the wait only in the error body. The server's own `Date` is the reference, so
@@ -115,21 +117,16 @@ public final class IncidentIoRequestException extends RuntimeException implement
     if (header != null) {
       return header;
     }
-    if (rateLimit == null || rateLimit.retryAfter() == null || httpResponse == null) {
+    if (rateLimit == null || rateLimit.retryAfter() == null) {
       return null;
     }
-    final var headers = httpResponse.headers();
-    if (headers == null) {
-      return null;
-    }
-    final var date = headers.firstValue("Date");
-    if (date.isEmpty()) {
+    final var date = IncidentClientException.responseDate(httpResponse);
+    if (date == null) {
       return null;
     }
     try {
       final var until = OffsetDateTime.parse(rateLimit.retryAfter()).toInstant();
-      final var now = OffsetDateTime.parse(date.get(), RFC_1123_DATE_TIME).toInstant();
-      final var wait = Duration.between(now, until);
+      final var wait = Duration.between(date, until);
       return wait.isPositive() ? wait : Duration.ZERO;
     } catch (final DateTimeException unparseable) {
       return null;

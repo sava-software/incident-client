@@ -9,6 +9,8 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +24,18 @@ final class IncidentClientExceptionTests {
 
     static HeaderResponse retryAfter(final String... values) {
       return new HeaderResponse(HttpHeaders.of(Map.of("Retry-After", List.of(values)), (_, _) -> true));
+    }
+
+    /// `Retry-After` and `Date`, each omitted when null.
+    static HeaderResponse retryAfterAndDate(final String retryAfter, final String date) {
+      final var headers = new HashMap<String, List<String>>();
+      if (retryAfter != null) {
+        headers.put("Retry-After", List.of(retryAfter));
+      }
+      if (date != null) {
+        headers.put("Date", List.of(date));
+      }
+      return new HeaderResponse(HttpHeaders.of(headers, (_, _) -> true));
     }
 
     @Override
@@ -83,7 +97,7 @@ final class IncidentClientExceptionTests {
     return IncidentClientException.retryAfter(HeaderResponse.retryAfter(value));
   }
 
-  /// RFC 9110's delta-seconds: ASCII digits whose value fits a long, in seconds.
+  /// RFC 9110's delay-seconds: ASCII digits whose value fits a long, in seconds.
   @Test
   void deltaSecondsAreAccepted() {
     assertEquals(Duration.ofSeconds(30), parse("30"));
@@ -95,7 +109,8 @@ final class IncidentClientExceptionTests {
     assertEquals(Duration.ofSeconds(30), parse(" \t30\t "));
   }
 
-  /// Anything but delta-seconds is no wait: the HTTP-date form is deliberately unsupported.
+  /// Anything but delta-seconds is no wait on a response without a `Date` header, an
+  /// HTTP-date included: there is nothing to measure it from.
   @Test
   void everyOtherFormIsNull() {
     for (final var value : List.of(
@@ -110,6 +125,174 @@ final class IncidentClientExceptionTests {
         "３０")) {
       assertNull(parse(value), value);
     }
+  }
+
+  /// A value that is neither delta-seconds nor an HTTP-date is no wait, whatever the `Date`.
+  @Test
+  void everyOtherFormIsNullBesideAValidDate() {
+    for (final var value : List.of(
+        "+30", "-30", "-0", "30.5", "1e3", "3 0", "30s", "0x1E",
+        "   ",
+        "٣٠",
+        "３０",
+        "2026-11-12T10:00:30Z",
+        // a weekday that is not the date's
+        "Wed, 12 Nov 2026 10:00:30 GMT",
+        "yesterday")) {
+      assertNull(IncidentClientException.retryAfter(HeaderResponse.retryAfterAndDate(value, DATE)), value);
+    }
+  }
+
+  private static final String DATE = "Thu, 12 Nov 2026 10:00:00 GMT";
+
+  private static Duration parse(final String retryAfter, final String date) {
+    return IncidentClientException.retryAfter(HeaderResponse.retryAfterAndDate(retryAfter, date));
+  }
+
+  /// RFC 9110's HTTP-date: the wait is the time from the response's own `Date` to it.
+  @Test
+  void anHttpDateIsMeasuredFromTheResponsesDate() {
+    assertEquals(Duration.ofSeconds(30), parse("Thu, 12 Nov 2026 10:00:30 GMT", DATE));
+    assertEquals(Duration.ofSeconds(1), parse("Thu, 12 Nov 2026 10:00:01 GMT", DATE));
+    assertEquals(Duration.ofHours(5).plusMinutes(30), parse("Thu, 12 Nov 2026 15:30:00 GMT", DATE));
+    assertEquals(Duration.ofHours(16).plusMinutes(15).plusSeconds(45), parse("Fri, 13 Nov 2026 02:15:45 GMT", DATE));
+    assertEquals(Duration.ofSeconds(90), parse("Fri, 13 Nov 2026 00:00:30 GMT", "Thu, 12 Nov 2026 23:59:00 GMT"));
+    // a real leap day, on either header
+    assertEquals(Duration.ofDays(1), parse("Fri, 01 Mar 2024 00:00:00 GMT", "Thu, 29 Feb 2024 00:00:00 GMT"));
+    assertEquals(Duration.ofDays(1), parse("Thu, 29 Feb 2024 00:00:00 GMT", "Wed, 28 Feb 2024 00:00:00 GMT"));
+  }
+
+  /// Only an IMF-fixdate exactly as RFC 9110 section 5.6.7 writes it is read, on either header:
+  /// case-sensitive English names, fixed widths, the literal `GMT`, and a date and time that
+  /// exist. Each value here stands for `Thu, 12 Nov 2026 10:00:30 GMT` or is not a real date.
+  private static final List<String> NOT_IMF_FIXDATES = List.of(
+      // a two-digit and a five-digit year
+      "Thu, 12 Nov 26 10:00:30 GMT",
+      "Thu, 12 Nov 02026 10:00:30 GMT",
+      // days that do not exist, each with the weekday of the day a lenient reader clamps to
+      "Sat, 30 Feb 2026 10:00:30 GMT",
+      "Sat, 29 Feb 2026 10:00:30 GMT",
+      "Mon, 31 Nov 2026 10:00:30 GMT",
+      // times that do not exist, the leap second included
+      "Thu, 12 Nov 2026 24:00:00 GMT",
+      "Thu, 12 Nov 2026 10:60:30 GMT",
+      "Thu, 12 Nov 2026 10:00:60 GMT",
+      "Thu, 12 Nov 2026 23:59:60 GMT",
+      // a weekday that contradicts the date
+      "Fri, 12 Nov 2026 10:00:30 GMT",
+      // a one-digit day, missing seconds, a missing weekday
+      "Mon, 2 Nov 2026 10:00:30 GMT",
+      "Thu, 12 Nov 2026 10:00 GMT",
+      "12 Nov 2026 10:00:30 GMT",
+      // lower-case names
+      "thu, 12 nov 2026 10:00:30 gmt",
+      "Thu, 12 nov 2026 10:00:30 GMT",
+      "Thu, 12 Nov 2026 10:00:30 gmt",
+      // a zone other than the literal GMT
+      "Thu, 12 Nov 2026 10:00:30 UTC",
+      "Thu, 12 Nov 2026 10:00:30 Z",
+      "Thu, 12 Nov 2026 10:00:30 +0000",
+      "Thu, 12 Nov 2026 11:00:30 +0100",
+      // a doubled space
+      "Thu,  12 Nov 2026 10:00:30 GMT",
+      "Thu, 12 Nov 2026  10:00:30 GMT",
+      "Thu, 12 Nov 2026 10:00:30  GMT");
+
+  /// A `Retry-After` that is not a strict IMF-fixdate is null beside a valid `Date`.
+  @Test
+  void aRetryAfterThatIsNotAStrictImfFixdateIsNull() {
+    for (final var value : NOT_IMF_FIXDATES) {
+      assertNull(parse(value, DATE), value);
+    }
+  }
+
+  /// A `Date` that is not a strict IMF-fixdate is null, and so is a valid date-form
+  /// `Retry-After` measured from it.
+  @Test
+  void aDateThatIsNotAStrictImfFixdateIsNull() {
+    for (final var value : NOT_IMF_FIXDATES) {
+      assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, value)), value);
+      assertNull(parse("Thu, 12 Nov 2026 10:05:00 GMT", value), value);
+    }
+  }
+
+  /// A date at or before the response's `Date` is no wait left: zero.
+  @Test
+  void anHttpDateNotAfterTheResponsesDateIsZero() {
+    assertEquals(Duration.ZERO, parse(DATE, DATE));
+    assertEquals(Duration.ZERO, parse("Thu, 12 Nov 2026 09:59:59 GMT", DATE));
+    assertEquals(Duration.ZERO, parse("Wed, 21 Oct 2015 07:28:00 GMT", DATE));
+  }
+
+  /// Without a `Date` that parses, an HTTP-date has nothing to be measured from: null.
+  @Test
+  void anHttpDateWithoutAReadableDateIsNull() {
+    final var retryAfter = "Thu, 12 Nov 2026 10:00:30 GMT";
+    assertNull(parse(retryAfter, null), "no Date");
+    for (final var date : List.of(
+        "2026-11-12T10:00:00Z",
+        "Thursday, 12-Nov-26 10:00:00 GMT",
+        "Thu Nov 12 10:00:00 2026",
+        "",
+        "yesterday")) {
+      assertNull(parse(retryAfter, date), date);
+    }
+  }
+
+  /// The obsolete rfc850-date and asctime-date forms are not read, whatever the `Date`.
+  @Test
+  void theObsoleteDateFormsAreNull() {
+    assertNull(parse("Sunday, 06-Nov-94 08:49:37 GMT", "Sun, 06 Nov 1994 08:49:00 GMT"));
+    assertNull(parse("Sun Nov  6 08:49:37 1994", "Sun, 06 Nov 1994 08:49:00 GMT"));
+    assertNull(parse("Thursday, 12-Nov-26 10:00:30 GMT", DATE));
+    assertNull(parse("Thu Nov 12 10:00:30 2026", DATE));
+  }
+
+  /// A numeric zone offset in place of `GMT`, on either header, is null.
+  @Test
+  void aNumericZoneOffsetIsNull() {
+    assertNull(parse("Thu, 12 Nov 2026 11:00:30 +0100", DATE));
+    assertNull(parse("Thu, 12 Nov 2026 10:00:30 GMT", "Thu, 12 Nov 2026 11:00:00 +0100"));
+    assertNull(parse("Thu, 12 Nov 2026 10:30:00 -0200", "Thu, 12 Nov 2026 12:00:00 +0100"));
+    assertNull(parse("Thu, 12 Nov 2026 10:00:30 +0100", DATE));
+  }
+
+  /// delay-seconds is read as it is, a `Date` header beside it or not, and the first value
+  /// decides between the two forms.
+  @Test
+  void delaySecondsIgnoresTheDate() {
+    assertEquals(Duration.ofSeconds(30), parse("30", DATE));
+    assertEquals(Duration.ZERO, parse("0", DATE));
+    assertEquals(Duration.ofSeconds(30), parse("30", "yesterday"));
+    assertNull(parse("9223372036854775808", DATE));
+    assertNull(parse("", DATE));
+    final var dateFirst = Map.of(
+        "Retry-After", List.of("Thu, 12 Nov 2026 10:00:30 GMT", "5"),
+        "Date", List.of(DATE));
+    assertEquals(Duration.ofSeconds(30), IncidentClientException.retryAfter(
+        new HeaderResponse(HttpHeaders.of(dateFirst, (_, _) -> true))));
+    final var digitsFirst = Map.of(
+        "Retry-After", List.of("5", "Thu, 12 Nov 2026 10:00:30 GMT"),
+        "Date", List.of(DATE));
+    assertEquals(Duration.ofSeconds(5), IncidentClientException.retryAfter(
+        new HeaderResponse(HttpHeaders.of(digitsFirst, (_, _) -> true))));
+  }
+
+  /// The `Date` header as an instant, or null when there is none that parses.
+  @Test
+  void responseDate() {
+    assertEquals(Instant.parse("2026-11-12T10:00:00Z"),
+        IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, DATE)));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, "Thu, 12 Nov 2026 11:00:00 +0100")));
+    assertEquals(Instant.parse("2026-11-12T10:00:00Z"), IncidentClientException.responseDate(new HeaderResponse(
+        HttpHeaders.of(Map.of("date", List.of(DATE, "yesterday")), (_, _) -> true))));
+    assertNull(IncidentClientException.responseDate(null));
+    assertNull(IncidentClientException.responseDate(new HeaderResponse(null)));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate("30", null)));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, "yesterday")));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, "")));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, "2026-11-12T10:00:00Z")));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, "Sun Nov  6 08:49:37 1994")));
   }
 
   /// The first value is the one read.
@@ -139,6 +322,8 @@ final class IncidentClientExceptionTests {
   @Test
   void theDefaultReadsTheExceptionsResponse() {
     assertEquals(Duration.ofSeconds(42), new DefaultException(HeaderResponse.retryAfter("42")).retryAfter());
+    assertEquals(Duration.ofSeconds(30), new DefaultException(
+        HeaderResponse.retryAfterAndDate("Thu, 12 Nov 2026 10:00:30 GMT", DATE)).retryAfter());
     assertNull(new DefaultException(null).retryAfter());
   }
 }

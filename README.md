@@ -233,7 +233,8 @@ keyed by whatever identifies its subject and resolved by that key or by `respons
 
 `IncidentService.createService(incidentClient)` wraps a client with retries driven by a
 retry-delay function. When a provider asks for a wait before the next attempt, such as a
-429's `Retry-After`, the service waits it out before retrying, up to a limit of one minute
+429's `Retry-After` (in seconds, or as a date measured from the response's own `Date`
+header), the service waits it out before retrying, up to a limit of one minute
 by default (`IncidentService.DEFAULT_MAX_RETRY_AFTER`); a longer wait ends the call at once
 with the provider's failure, whatever the retry count, so an alert is never held for an
 hour in silence and the caller can fall back. `IncidentService.createService(incidentClient,

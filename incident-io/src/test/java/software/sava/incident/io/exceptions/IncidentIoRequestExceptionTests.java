@@ -457,9 +457,34 @@ final class IncidentIoRequestExceptionTests {
     assertEquals(Duration.ofSeconds(300), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:05:00Z")));
     assertEquals(Duration.ofMillis(1_500), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:00:01.5Z")));
     assertEquals(Duration.ofSeconds(60), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T11:01:00+01:00")));
-    // an unparseable header falls through to the body
+    // an HTTP-date header naming the body's instant reads the same wait
     assertEquals(Duration.ofSeconds(300), retryAfter(
         Map.of("Retry-After", "Thu, 12 Nov 2026 10:05:00 GMT", "Date", DATE), rateLimited("2026-11-12T10:05:00Z")));
+    // an unparseable header falls through to the body
+    assertEquals(Duration.ofSeconds(300), retryAfter(
+        Map.of("Retry-After", "Thursday, 12-Nov-26 10:00:30 GMT", "Date", DATE), rateLimited("2026-11-12T10:05:00Z")));
+  }
+
+  /// A `Retry-After` header that only a lenient reader would take as a date, a two-digit
+  /// year or a numeric zone offset, is no header: the body's instant decides.
+  @Test
+  void aRetryAfterHeaderThatIsNotAStrictImfFixdateFallsThroughToTheBody() {
+    final var body = rateLimited("2026-11-12T10:05:00Z");
+    assertEquals(Duration.ofSeconds(300),
+        retryAfter(Map.of("Retry-After", "Thu, 12 Nov 26 10:00:30 GMT", "Date", DATE), body));
+    assertEquals(Duration.ofSeconds(300),
+        retryAfter(Map.of("Retry-After", "Thu, 12 Nov 2026 11:00:30 +0100", "Date", DATE), body));
+  }
+
+  /// A `Retry-After` header in its HTTP-date form, measured from `Date`, wins over the body's
+  /// instant too.
+  @Test
+  void anHttpDateRetryAfterHeaderWins() {
+    final var body = rateLimited("2026-11-12T10:05:00Z");
+    assertEquals(Duration.ofSeconds(30),
+        retryAfter(Map.of("Retry-After", "Thu, 12 Nov 2026 10:00:30 GMT", "Date", DATE), body));
+    assertEquals(Duration.ZERO,
+        retryAfter(Map.of("Retry-After", "Thu, 12 Nov 2026 09:00:00 GMT", "Date", DATE), body));
   }
 
   /// An instant at or before the server's `Date` is no wait left: zero.

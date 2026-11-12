@@ -106,9 +106,9 @@ For structured diagnostics, use:
   source member reads as null, including `pointer` in a field-only source.
 - `rateLimit()` — optional `RateLimit` with `name`, `limit`, `remaining`, and
   `retryAfter`. The latter preserves the API's RFC 3339 UTC timestamp string. For
-  scheduling, use the exception's `retryAfter()`: the `Retry-After` HTTP header in
-  seconds, which upstream recommends, or else this timestamp measured from the response's
-  `Date` header.
+  scheduling, use the exception's `retryAfter()`: the `Retry-After` HTTP header, which
+  upstream recommends, in seconds or as a date measured from the response's `Date` header,
+  or else this timestamp measured from that `Date`.
 - `debug()` — optional `DebugInfo` with the server's internal `message` and immutable
   `stacktrace` list. Missing stack frames read as an empty list.
 
@@ -256,8 +256,8 @@ other object is sent as its `toString()`. A map, a Java array, a nested collecti
 nonfinite number are refused with an `IllegalArgumentException` when added.
 
 A non-2xx response fails the future with `IncidentIoRequestException`, whose
-`retryAfter()` reads a 429's `Retry-After` header or, failing that, the body's
-`rate_limit.retry_after` measured from the response's `Date`. A 2xx body that cannot be
+`retryAfter()` reads a 429's `Retry-After` header, in seconds or as a date, or, failing
+that, the body's `rate_limit.retry_after`; a date is measured from the response's `Date`. A 2xx body that cannot be
 parsed fails with `IncidentIoParseException`, which is not retried.
 
 ### Provider-neutral adapter
