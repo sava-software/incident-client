@@ -34,6 +34,12 @@ final class IncidentIoClientWireTests {
   }
 
   private Wire serve(final int status, final String responseBody) throws IOException {
+    return serve(status, responseBody, Map.of());
+  }
+
+  private Wire serve(final int status,
+                     final String responseBody,
+                     final Map<String, String> responseHeaders) throws IOException {
     final var headers = new AtomicReference<Map<String, List<String>>>();
     final var body = new AtomicReference<String>();
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -42,6 +48,7 @@ final class IncidentIoClientWireTests {
         body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         headers.set(Map.copyOf(exchange.getRequestHeaders()));
         final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+        responseHeaders.forEach(exchange.getResponseHeaders()::set);
         exchange.sendResponseHeaders(status, bytes.length);
         exchange.getResponseBody().write(bytes);
       }
@@ -130,6 +137,25 @@ final class IncidentIoClientWireTests {
     final var cause = assertInstanceOf(IncidentIoRequestException.class, thrown.getCause());
     assertEquals(400, cause.httpResponse().statusCode());
     assertFalse(cause.canBeRetried());
+  }
+
+  /// A 429's `Retry-After` header reaches the request exception's `retryAfter()`, and wins
+  /// over the body's `rate_limit.retry_after`.
+  @Test
+  void aRateLimitedResponseCarriesItsRetryAfter() throws IOException {
+    final var wire = serve(429, """
+        {"type":"too_many_requests","status":429,"request_id":"req-429","errors":[],\
+        "rate_limit":{"name":"api_key","limit":10,"remaining":0,"retry_after":"2000-01-01T00:00:00Z"}}""",
+        Map.of("Retry-After", "30"));
+    final var client = IncidentIoClient.clientBuilder()
+        .endpoint(URI.create(wire.endpoint()))
+        .createClient();
+
+    final var thrown = assertThrows(CompletionException.class,
+        () -> client.createIncident(request()).join());
+    final var cause = assertInstanceOf(IncidentIoRequestException.class, thrown.getCause());
+    assertTrue(cause.canBeRetried());
+    assertEquals(Duration.ofSeconds(30), cause.retryAfter());
   }
 
   @Test

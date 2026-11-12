@@ -376,4 +376,123 @@ final class IncidentIoRequestExceptionTests {
     assertTrue(rendered.startsWith("IncidentIoRequestException{"), rendered);
     assertTrue(rendered.contains("validation_error"), rendered);
   }
+
+  // ---- retryAfter() ----
+
+  /// A 429 carrying one value per header, or null headers when `headerValues` is null.
+  private record HeaderResponse(Map<String, String> headerValues) implements HttpResponse<byte[]> {
+
+    @Override
+    public int statusCode() {
+      return 429;
+    }
+
+    @Override
+    public HttpHeaders headers() {
+      if (headerValues == null) {
+        return null;
+      }
+      final var map = new HashMap<String, List<String>>();
+      headerValues.forEach((name, value) -> map.put(name, List.of(value)));
+      return HttpHeaders.of(map, (_, _) -> true);
+    }
+
+    @Override
+    public HttpRequest request() {
+      return null;
+    }
+
+    @Override
+    public Optional<HttpResponse<byte[]>> previousResponse() {
+      return Optional.empty();
+    }
+
+    @Override
+    public byte[] body() {
+      return null;
+    }
+
+    @Override
+    public Optional<SSLSession> sslSession() {
+      return Optional.empty();
+    }
+
+    @Override
+    public URI uri() {
+      return null;
+    }
+
+    @Override
+    public HttpClient.Version version() {
+      return HttpClient.Version.HTTP_2;
+    }
+  }
+
+  private static final String DATE = "Thu, 12 Nov 2026 10:00:00 GMT";
+
+  private static byte[] rateLimited(final String retryAfter) {
+    return ("""
+        {"type":"too_many_requests","status":429,"request_id":"req-429","errors":[],\
+        "rate_limit":{"name":"api_key","limit":10,"remaining":0,"retry_after":%s}}"""
+        .formatted(retryAfter == null ? "null" : '"' + retryAfter + '"')).getBytes(UTF_8);
+  }
+
+  private static Duration retryAfter(final Map<String, String> headers, final byte[] body) {
+    return IncidentIoRequestException.parse(new HeaderResponse(headers), body).retryAfter();
+  }
+
+  /// The `Retry-After` header wins over the body's instant, as the schema prefers, including
+  /// a header of zero.
+  @Test
+  void theRetryAfterHeaderWins() {
+    final var body = rateLimited("2026-11-12T10:05:00Z");
+    assertEquals(Duration.ofSeconds(30), retryAfter(Map.of("Retry-After", "30", "Date", DATE), body));
+    assertEquals(Duration.ZERO, retryAfter(Map.of("Retry-After", "0", "Date", DATE), body));
+    assertEquals(Duration.ofSeconds(30), retryAfter(Map.of("Retry-After", "30"), rateLimited(null)));
+  }
+
+  /// Without the header, the body's instant is measured from the server's own `Date`.
+  @Test
+  void theBodysInstantIsMeasuredFromTheServersDate() {
+    assertEquals(Duration.ofSeconds(300), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:05:00Z")));
+    assertEquals(Duration.ofMillis(1_500), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:00:01.5Z")));
+    assertEquals(Duration.ofSeconds(60), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T11:01:00+01:00")));
+    // an unparseable header falls through to the body
+    assertEquals(Duration.ofSeconds(300), retryAfter(
+        Map.of("Retry-After", "Thu, 12 Nov 2026 10:05:00 GMT", "Date", DATE), rateLimited("2026-11-12T10:05:00Z")));
+  }
+
+  /// An instant at or before the server's `Date` is no wait left: zero.
+  @Test
+  void aPastInstantIsZero() {
+    assertEquals(Duration.ZERO, retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:00:00Z")));
+    assertEquals(Duration.ZERO, retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T09:00:00Z")));
+    assertEquals(Duration.ofNanos(1), retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:00:00.000000001Z")));
+  }
+
+  /// Without both an instant and a `Date` that parse, there is no wait to report.
+  @Test
+  void withoutBothAnInstantAndADateItIsNull() {
+    final var instant = rateLimited("2026-11-12T10:05:00Z");
+    assertNull(retryAfter(Map.of(), instant), "no Date");
+    assertNull(retryAfter(null, instant), "no headers");
+    assertNull(IncidentIoRequestException.parse(null, instant).retryAfter(), "no response");
+    assertNull(retryAfter(Map.of("Date", DATE), rateLimited(null)), "no instant");
+    assertNull(retryAfter(Map.of("Date", DATE), """
+        {"type":"too_many_requests","status":429}""".getBytes(UTF_8)), "no rate_limit");
+    assertNull(retryAfter(Map.of("Date", DATE), """
+        {"type":"too_many_requests","status":429,"rate_limit":null}""".getBytes(UTF_8)), "null rate_limit");
+    assertNull(retryAfter(Map.of("Date", DATE), rateLimited("verbatim retry hint")), "unparseable instant");
+    assertNull(retryAfter(Map.of("Date", DATE), rateLimited("2026-11-12T10:05:00")), "instant without offset");
+    assertNull(retryAfter(Map.of("Date", "yesterday"), instant), "unparseable Date");
+    assertNull(retryAfter(Map.of("Date", "2026-11-12T10:00:00Z"), instant), "Date not in IMF-fixdate");
+  }
+
+  /// A 429 whose body does not parse keeps the interface's default: the header.
+  @Test
+  void aRateLimitedParseExceptionReadsTheHeader() {
+    final var exception = assertThrows(IncidentIoParseException.class, () -> IncidentIoRequestException.parse(
+        new HeaderResponse(Map.of("Retry-After", "30")), "{\"status\":\"x\"".getBytes(UTF_8)));
+    assertEquals(Duration.ofSeconds(30), exception.retryAfter());
+  }
 }

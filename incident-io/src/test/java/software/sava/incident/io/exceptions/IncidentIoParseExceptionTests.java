@@ -8,6 +8,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -74,5 +76,57 @@ final class IncidentIoParseExceptionTests {
     assertEquals("message-1", exception.getMessage());
     assertEquals(0, exception.errorCode());
     assertEquals(java.util.List.of(), exception.errors());
+  }
+
+  /// A 429 carrying `Retry-After: <retryAfter>`.
+  private record RetryAfterResponse(String retryAfter) implements HttpResponse<byte[]> {
+
+    @Override
+    public int statusCode() {
+      return 429;
+    }
+
+    @Override
+    public HttpHeaders headers() {
+      return HttpHeaders.of(Map.of("Retry-After", List.of(retryAfter)), (_, _) -> true);
+    }
+
+    @Override
+    public HttpRequest request() {
+      return null;
+    }
+
+    @Override
+    public Optional<HttpResponse<byte[]>> previousResponse() {
+      return Optional.empty();
+    }
+
+    @Override
+    public byte[] body() {
+      return null;
+    }
+
+    @Override
+    public Optional<SSLSession> sslSession() {
+      return Optional.empty();
+    }
+
+    @Override
+    public URI uri() {
+      return null;
+    }
+
+    @Override
+    public HttpClient.Version version() {
+      return HttpClient.Version.HTTP_2;
+    }
+  }
+
+  /// A parse failure keeps the interface's default: the 429's `Retry-After` header.
+  @Test
+  void aRateLimitedParseFailureReadsTheRetryAfterHeader() {
+    assertEquals(Duration.ofSeconds(30), new IncidentIoParseException(new RetryAfterResponse("30"), "rate limited").retryAfter());
+    assertNull(new IncidentIoParseException(new StubResponse(429), "rate limited").retryAfter());
+    assertNull(new IncidentIoParseException(null, "no response").retryAfter());
   }
 }

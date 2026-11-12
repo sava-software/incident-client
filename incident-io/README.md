@@ -102,16 +102,17 @@ For structured diagnostics, use:
   source member reads as null, including `pointer` in a field-only source.
 - `rateLimit()` — optional `RateLimit` with `name`, `limit`, `remaining`, and
   `retryAfter`. The latter preserves the API's RFC 3339 UTC timestamp string. For
-  scheduling, upstream recommends the `Retry-After` HTTP header, available from
-  `httpResponse().headers()`, which gives the delay in seconds.
+  scheduling, use the exception's `retryAfter()`: the `Retry-After` HTTP header in
+  seconds, which upstream recommends, or else this timestamp measured from the response's
+  `Date` header.
 - `debug()` — optional `DebugInfo` with the server's internal `message` and immutable
   `stacktrace` list. Missing stack frames read as an empty list.
 
 Optional objects read as null when missing or explicitly null. Unknown fields are
 skipped, and a recognized field the parser cannot read raises `IncidentIoParseException`.
 Null metadata values and null stack-frame elements are rejected.
-Rate-limit information is available for caller-controlled scheduling; `IncidentService`
-continues to use its configured retry-delay function.
+`IncidentService` waits out `retryAfter()` before its next attempt, up to the service's
+limit, and past it fails the call at once with this exception.
 
 ## Configuration
 

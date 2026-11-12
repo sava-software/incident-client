@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -21,8 +22,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -173,6 +176,7 @@ final class IncidentServiceTests {
     private final List<String> resolvedKeys = new ArrayList<>();
     private CompletableFuture<IncidentResponse> resolveResult;
     private Supplier<Throwable> failureFactory;
+    private RuntimeException thrownSynchronously;
 
     private StubClient(final int failures, final boolean canBeRetried) {
       this.failures = failures;
@@ -183,6 +187,9 @@ final class IncidentServiceTests {
       if (calls.incrementAndGet() <= failures) {
         final var exception = failureFactory == null ? new TestClientException(canBeRetried) : failureFactory.get();
         return CompletableFuture.failedFuture(wrapFailures ? new CompletionException(exception) : exception);
+      }
+      if (thrownSynchronously != null) {
+        throw thrownSynchronously;
       }
       return CompletableFuture.completedFuture(IncidentResponse.of(key, "success", null));
     }
@@ -636,6 +643,24 @@ final class IncidentServiceTests {
   }
 
   @Test
+  void aWrappedTransportFailureIsRetried() {
+    // an upstream stage delivers a transport failure as the cause of a CompletionException:
+    // neither the failure nor its cause is a client exception, so no server wait is read from
+    // either, and the call is retried like any other transport failure
+    final var client = new StubClient(1, true);
+    client.wrapFailures = true;
+    client.failureFactory = () -> new java.io.IOException("connection reset");
+    final var service = IncidentService.createService(client);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      final var response = service.reportIncident(ALERT, 5, 0, 0, TimeUnit.MILLISECONDS).join();
+      assertEquals("success", response.status());
+      assertTrue(recorder.logged("Failure Count: 1"));
+      assertFalse(recorder.logged("Retry-After"));
+    }
+    assertEquals(2, client.calls.get());
+  }
+
+  @Test
   void clientFailureLogsHttpAndServiceErrorCodes() {
     final var client = new StubClient(1, true);
     client.wrapFailures = true;
@@ -713,5 +738,721 @@ final class IncidentServiceTests {
     final var wrapped = assertInstanceOf(RuntimeException.class, thrown.getCause());
     assertSame(cause, wrapped.getCause());
     assertEquals(1, client.calls.get());
+  }
+
+  // ---- a provider's Retry-After ----
+
+  /// A response carrying `Retry-After: <retryAfter>`, so the interface's default reads it.
+  private record RetryAfterHttpResponse(int statusCode, String retryAfter) implements HttpResponse<Object> {
+
+    @Override
+    public HttpHeaders headers() {
+      return HttpHeaders.of(Map.of("Retry-After", List.of(retryAfter)), (_, _) -> true);
+    }
+
+    @Override
+    public HttpRequest request() {
+      return null;
+    }
+
+    @Override
+    public Optional<HttpResponse<Object>> previousResponse() {
+      return Optional.empty();
+    }
+
+    @Override
+    public Object body() {
+      return null;
+    }
+
+    @Override
+    public Optional<SSLSession> sslSession() {
+      return Optional.empty();
+    }
+
+    @Override
+    public URI uri() {
+      return null;
+    }
+
+    @Override
+    public HttpClient.Version version() {
+      return HttpClient.Version.HTTP_1_1;
+    }
+  }
+
+  /// A provider exception that states its wait itself, overriding `retryAfter()`.
+  private static final class WaitingClientException extends RuntimeException implements IncidentClientException {
+
+    private final boolean canBeRetried;
+    private final Supplier<Duration> retryAfter;
+
+    private WaitingClientException(final boolean canBeRetried, final Supplier<Duration> retryAfter) {
+      super("waiting");
+      this.canBeRetried = canBeRetried;
+      this.retryAfter = retryAfter;
+    }
+
+    @Override
+    public Duration retryAfter() {
+      return retryAfter.get();
+    }
+
+    @Override
+    public boolean canBeRetried() {
+      return canBeRetried;
+    }
+
+    @Override
+    public HttpResponse<?> httpResponse() {
+      return null;
+    }
+
+    @Override
+    public long errorCode() {
+      return 0;
+    }
+
+    @Override
+    public List<String> errors() {
+      return List.of();
+    }
+  }
+
+  /// A retryable checked provider exception that states a wait.
+  private static final class WaitingCheckedClientException extends Exception implements IncidentClientException {
+
+    private final Duration retryAfter;
+
+    private WaitingCheckedClientException(final Throwable cause, final Duration retryAfter) {
+      super("retriable-checked", cause);
+      this.retryAfter = retryAfter;
+    }
+
+    @Override
+    public Duration retryAfter() {
+      return retryAfter;
+    }
+
+    @Override
+    public boolean canBeRetried() {
+      return true;
+    }
+
+    @Override
+    public HttpResponse<?> httpResponse() {
+      return null;
+    }
+
+    @Override
+    public long errorCode() {
+      return 0;
+    }
+
+    @Override
+    public List<String> errors() {
+      return List.of();
+    }
+  }
+
+  private record Delay(long delay, TimeUnit unit) {
+  }
+
+  /// The delayed-executor seam: records each request when work is submitted to it, then runs
+  /// the work inline, so nothing waits.
+  private static final class RecordingDelays implements IncidentServiceVal.DelayedExecutorFactory {
+
+    private final List<Delay> requests = new ArrayList<>();
+    private final List<String> events;
+
+    private RecordingDelays() {
+      this(new ArrayList<>());
+    }
+
+    private RecordingDelays(final List<String> events) {
+      this.events = events;
+    }
+
+    @Override
+    public Executor delayedExecutor(final long delay, final TimeUnit unit) {
+      return task -> {
+        requests.add(new Delay(delay, unit));
+        events.add("delay " + delay + ' ' + unit);
+        task.run();
+      };
+    }
+  }
+
+  private static final TimeUnit MS = TimeUnit.MILLISECONDS;
+
+  private static TestClientException rateLimited(final String retryAfter) {
+    return new TestClientException(true, new RetryAfterHttpResponse(429, retryAfter), 0);
+  }
+
+  private static Supplier<Throwable> inTurn(final Throwable... failures) {
+    final var next = new AtomicInteger();
+    return () -> failures[next.getAndIncrement()];
+  }
+
+  private static List<Delay> ms(final long... delays) {
+    final var list = new ArrayList<Delay>();
+    for (final long delay : delays) {
+      list.add(new Delay(delay, MS));
+    }
+    return list;
+  }
+
+  private static LongUnaryOperator constant(final long delay) {
+    return _ -> delay;
+  }
+
+  /// (a) The canonical sequence: a 30 s wait after attempt 0 is served in full, the step delay
+  /// of attempt 1 as today, and the caller's function sees each attempt number once, in order.
+  @Test
+  void aProvidersWaitIsServedBeforeTheNextAttempt() {
+    final var client = new StubClient(2, true);
+    client.failureFactory = inTurn(rateLimited("30"), new TestClientException(true));
+    final var delays = new RecordingDelays();
+    final var seen = new ArrayList<Long>();
+    final var fn = IncidentService.createRetryDelayFn(10, 1_000);
+
+    final var response = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+        .reportIncident(ALERT, n -> {
+          seen.add(n);
+          return fn.applyAsLong(n);
+        }, MS).join();
+
+    assertEquals("success", response.status());
+    assertEquals(3, client.calls.get());
+    assertEquals(ms(30_000, 10), delays.requests);
+    assertEquals(List.of(0L, 1L, 2L), seen);
+  }
+
+  /// (b) A wait the attempt's own delay already covers adds nothing; one millisecond more than
+  /// it adds that millisecond.
+  @Test
+  void aWaitTheStepDelayCoversAddsNoRequest() {
+    for (final long d : new long[]{40_000, 30_000}) {
+      final var client = new StubClient(1, true);
+      client.failureFactory = () -> rateLimited("30");
+      final var delays = new RecordingDelays();
+      new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .reportIncident(ALERT, n -> n == 0 ? d : 0, MS).join();
+      assertEquals(ms(d), delays.requests, "d = " + d);
+      assertEquals(2, client.calls.get());
+    }
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> rateLimited("30");
+    final var delays = new RecordingDelays();
+    new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+        .reportIncident(ALERT, n -> n == 0 ? 29_999 : 0, MS).join();
+    assertEquals(ms(29_999, 1), delays.requests);
+  }
+
+  /// (c) (d) No header, or `Retry-After: 0`, is no server wait: the next attempt is immediate.
+  @Test
+  void anAbsentOrZeroWaitIsNoWait() {
+    for (final var failure : List.<Supplier<Throwable>>of(
+        () -> new TestClientException(true),
+        () -> new TestClientException(true, new TestHttpResponse(429), 0),
+        () -> rateLimited("0"),
+        () -> new WaitingClientException(true, () -> null),
+        () -> new WaitingClientException(true, () -> Duration.ZERO),
+        () -> new WaitingClientException(true, () -> Duration.ofSeconds(-5)))) {
+      final var client = new StubClient(1, true);
+      client.failureFactory = failure;
+      final var delays = new RecordingDelays();
+      final var service = new IncidentServiceVal(client, Duration.ZERO, delays);
+      try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+        assertEquals("success", service.reportIncident(ALERT, constant(0), MS).join().status());
+        assertFalse(recorder.logged("Retry-After"));
+      }
+      assertEquals(List.of(), delays.requests);
+      assertEquals(2, client.calls.get());
+    }
+  }
+
+  /// (e) The wait is rounded up to the call's unit, never down.
+  @Test
+  void aWaitIsRoundedUpToTheCallsUnit() {
+    final var cases = Map.of("1", 1L, "60", 1L, "61", 2L);
+    cases.forEach((header, minutes) -> {
+      final var client = new StubClient(1, true);
+      client.failureFactory = () -> rateLimited(header);
+      final var delays = new RecordingDelays();
+      new IncidentServiceVal(client, Duration.ofMinutes(5), delays)
+          .reportIncident(ALERT, constant(0), TimeUnit.MINUTES).join();
+      assertEquals(List.of(new Delay(minutes, TimeUnit.MINUTES)), delays.requests, header);
+    });
+  }
+
+  @Test
+  void roundUpSaturatesAndNeverThrows() {
+    assertEquals(2, IncidentServiceVal.roundUp(Duration.ofMillis(1_500), TimeUnit.SECONDS));
+    assertEquals(2, IncidentServiceVal.roundUp(Duration.ofSeconds(2), TimeUnit.SECONDS));
+    assertEquals(1, IncidentServiceVal.roundUp(Duration.ofNanos(1), TimeUnit.DAYS));
+    assertEquals(Long.MAX_VALUE, IncidentServiceVal.roundUp(Duration.ofSeconds(Long.MAX_VALUE), TimeUnit.NANOSECONDS));
+    assertEquals(Long.MAX_VALUE, IncidentServiceVal.roundUp(Duration.ofSeconds(Long.MAX_VALUE, 999_999_999), TimeUnit.MILLISECONDS));
+    assertEquals(Long.MAX_VALUE / 86_400 + 1, IncidentServiceVal.roundUp(Duration.ofSeconds(Long.MAX_VALUE), TimeUnit.DAYS));
+  }
+
+  /// (f) A wait carried by the failure's cause, as an upstream stage wraps it, is served too.
+  @Test
+  void aWaitCarriedByAWrappedCauseIsServed() {
+    final var client = new StubClient(1, true);
+    client.wrapFailures = true;
+    client.failureFactory = () -> rateLimited("30");
+    final var delays = new RecordingDelays();
+    new IncidentServiceVal(client, Duration.ofMinutes(1), delays).reportIncident(ALERT, constant(0), MS).join();
+    assertEquals(ms(30_000), delays.requests);
+    assertEquals(2, client.calls.get());
+  }
+
+  /// (g) A retry-delay function that gives up wins: no wait is served, whether or not it is
+  /// within the limit, and the give-up signal is today's.
+  @Test
+  void aGiveUpServesNoWait() {
+    for (final var header : List.of("30", "3600")) {
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = () -> rateLimited(header);
+      final var delays = new RecordingDelays();
+      final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .reportIncident(ALERT, n -> n == 0 ? 0 : -1, MS);
+      final var thrown = assertThrows(CompletionException.class, future::join);
+      assertInstanceOf(NullPointerException.class, thrown.getCause(), header);
+      assertEquals(List.of(), delays.requests);
+      assertEquals(1, client.calls.get());
+    }
+  }
+
+  /// (h) With no server wait, today's timeline: each attempt starts as soon as the previous
+  /// handler runs, the handler of attempt n runs after exactly fn(n), and a zero delay asks
+  /// the delayed executor for nothing. The failure log lines are today's, in order.
+  @Test
+  void withoutAServerWaitTheTimelineIsTodays() {
+    final var events = new ArrayList<String>();
+    final var values = new long[]{0, 7, 3, -1};
+    final var attempts = new AtomicInteger();
+    final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = () -> {
+      events.add("attempt " + attempts.getAndIncrement());
+      return new TestClientException(true);
+    };
+    final var delays = new RecordingDelays(events);
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .resolveIncident("key-h", n -> {
+            events.add("fn " + n);
+            return values[(int) n];
+          }, MS);
+      assertInstanceOf(NullPointerException.class, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(List.of(
+          "Failure Count: 1, Last Delay: 0 MILLISECONDS, to resolve incident with key 'key-h'.",
+          "Failure Count: 2, Last Delay: 7 MILLISECONDS, to resolve incident with key 'key-h'.",
+          "Failure Count: 3, Last Delay: 3 MILLISECONDS, to resolve incident with key 'key-h'."
+      ), recorder.messages());
+    }
+    assertEquals(List.of(
+        "fn 0", "attempt 0",
+        "fn 1", "attempt 1", "delay 7 MILLISECONDS",
+        "fn 2", "attempt 2", "delay 3 MILLISECONDS",
+        "fn 3"
+    ), events);
+    assertEquals(ms(7, 3), delays.requests);
+  }
+
+  /// (i) A wait equal to the limit is served; one over it, by a second or a nanosecond, ends
+  /// the call at once with the provider's exception, no further attempt and no wait.
+  @Test
+  void aWaitOverTheLimitFailsAtOnce() {
+    final var limit = Duration.ofSeconds(30);
+
+    final var atLimit = new StubClient(1, true);
+    atLimit.failureFactory = () -> rateLimited("30");
+    final var servedDelays = new RecordingDelays();
+    assertEquals("success", new IncidentServiceVal(atLimit, limit, servedDelays)
+        .reportIncident(ALERT, constant(5), MS).join().status());
+    assertEquals(ms(5, 29_995), servedDelays.requests);
+    assertEquals(2, atLimit.calls.get());
+
+    final var atLimitExactly = new StubClient(1, true);
+    atLimitExactly.failureFactory = () -> new WaitingClientException(true, () -> limit);
+    final var exactDelays = new RecordingDelays();
+    new IncidentServiceVal(atLimitExactly, limit, exactDelays).reportIncident(ALERT, constant(0), MS).join();
+    assertEquals(ms(30_000), exactDelays.requests);
+
+    for (final var over : List.<Supplier<RuntimeException>>of(
+        () -> rateLimited("31"),
+        () -> new WaitingClientException(true, () -> limit.plusNanos(1)))) {
+      final var failure = over.get();
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = () -> failure;
+      final var delays = new RecordingDelays();
+      final var future = new IncidentServiceVal(client, limit, delays).reportIncident(ALERT, constant(5), MS);
+      assertSame(failure, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(ms(5), delays.requests, "only the failed attempt's own delay");
+      assertEquals(1, client.calls.get());
+    }
+  }
+
+  /// (i) The limit holds through every overload, whatever the retry count, and on resolve.
+  @Test
+  void theLimitHoldsThroughEveryOverload() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, Integer.MAX_VALUE, 1, 1, MS),
+        service -> service.reportIncident(ALERT, constant(0), MS),
+        service -> service.reportIncident(ALERT, 1, 1, MS),
+        service -> service.reportIncident(ALERT, Duration.ofDays(365), 1, 1, MS),
+        service -> service.resolveIncident("key-i", constant(0), MS),
+        service -> service.resolveIncident("key-i", Integer.MAX_VALUE, 1, 1, MS),
+        service -> service.resolveIncident("key-i", Duration.ofDays(365), 1, 1, MS),
+        service -> service.resolveIncident(IncidentResponse.of("key-i", "ok", null), 1, 1, MS));
+    for (final var call : calls) {
+      final var failure = rateLimited("31");
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = () -> failure;
+      final var delays = new RecordingDelays();
+      final var future = call.apply(new IncidentServiceVal(client, Duration.ofSeconds(30), delays));
+      assertSame(failure, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(List.of(), delays.requests);
+      assertEquals(1, client.calls.get());
+    }
+  }
+
+  /// (j) The default limit is one minute: 60 s is served, 61 s refused.
+  @Test
+  void theDefaultLimitIsOneMinute() {
+    assertEquals(Duration.ofMinutes(1), IncidentService.DEFAULT_MAX_RETRY_AFTER);
+    final var client = new StubClient(Integer.MAX_VALUE, true);
+    final var byDefault = IncidentService.createService(client);
+    assertEquals(IncidentService.createService(client, Duration.ofMinutes(1)), byDefault);
+    assertEquals(Duration.ofMinutes(1), ((IncidentServiceVal) byDefault).maxRetryAfter());
+
+    // refused through the public factory itself: no delayed executor is reached
+    final var refused = rateLimited("61");
+    client.failureFactory = () -> refused;
+    assertSame(refused, assertThrows(CompletionException.class,
+        () -> byDefault.reportIncident(ALERT, constant(0), MS).join()).getCause());
+    assertEquals(1, client.calls.get());
+
+    final var served = new StubClient(1, true);
+    served.failureFactory = () -> rateLimited("60");
+    final var delays = new RecordingDelays();
+    new IncidentServiceVal(served, IncidentService.DEFAULT_MAX_RETRY_AFTER, delays)
+        .reportIncident(ALERT, constant(0), MS).join();
+    assertEquals(ms(60_000), delays.requests);
+  }
+
+  /// (j) A zero limit refuses every wait and still retries a failure without one; a null or
+  /// negative limit is refused.
+  @Test
+  void aZeroLimitRefusesEveryWait() {
+    final var refused = rateLimited("1");
+    final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = () -> refused;
+    final var future = IncidentService.createService(client, Duration.ZERO).reportIncident(ALERT, constant(0), MS);
+    assertSame(refused, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(1, client.calls.get());
+
+    final var plain = new StubClient(1, true);
+    assertEquals("success", IncidentService.createService(plain, Duration.ZERO)
+        .reportIncident(ALERT, constant(0), MS).join().status());
+    assertEquals(2, plain.calls.get());
+
+    final var any = new StubClient(0, true);
+    assertThrows(NullPointerException.class, () -> IncidentService.createService(any, null));
+    final var negative = assertThrows(IllegalArgumentException.class,
+        () -> IncidentService.createService(any, Duration.ofNanos(-1)));
+    assertEquals("maxRetryAfter must not be negative: PT-0.000000001S", negative.getMessage());
+  }
+
+  /// (k) A refusal surfaces the provider's failure as a non-retryable one would: a runtime
+  /// exception as the cause, the wrapper an upstream stage added as is, and a checked one's
+  /// runtime cause.
+  @Test
+  void aRefusalSurfacesTheProvidersFailure() {
+    final var direct = rateLimited("61");
+    final var directClient = new StubClient(Integer.MAX_VALUE, true);
+    directClient.failureFactory = () -> direct;
+    assertSame(direct, assertThrows(CompletionException.class,
+        () -> IncidentService.createService(directClient).reportIncident(ALERT, constant(0), MS).join()).getCause());
+
+    final var wrapped = rateLimited("61");
+    final var wrappedClient = new StubClient(Integer.MAX_VALUE, true);
+    wrappedClient.wrapFailures = true;
+    wrappedClient.failureFactory = () -> wrapped;
+    assertSame(wrapped, assertThrows(CompletionException.class,
+        () -> IncidentService.createService(wrappedClient).reportIncident(ALERT, constant(0), MS).join()).getCause());
+
+    final var runtimeCause = new IllegalStateException("cause-k");
+    final var checkedClient = new StubClient(Integer.MAX_VALUE, true);
+    checkedClient.failureFactory = () -> new WaitingCheckedClientException(runtimeCause, Duration.ofSeconds(61));
+    assertSame(runtimeCause, assertThrows(CompletionException.class,
+        () -> IncidentService.createService(checkedClient).reportIncident(ALERT, constant(0), MS).join()).getCause());
+    assertEquals(1, checkedClient.calls.get());
+
+    final var checkedCause = new Exception("cause-k2");
+    final var bareCheckedClient = new StubClient(Integer.MAX_VALUE, true);
+    bareCheckedClient.failureFactory = () -> new WaitingCheckedClientException(checkedCause, Duration.ofSeconds(61));
+    final var bare = assertThrows(CompletionException.class,
+        () -> IncidentService.createService(bareCheckedClient).reportIncident(ALERT, constant(0), MS).join());
+    assertSame(checkedCause, assertInstanceOf(RuntimeException.class, bare.getCause()).getCause());
+  }
+
+  /// (k) A retryable checked exception's wait within the limit is served.
+  @Test
+  void aCheckedExceptionsWaitIsServed() {
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> new WaitingCheckedClientException(new IllegalStateException(), Duration.ofSeconds(2));
+    final var delays = new RecordingDelays();
+    new IncidentServiceVal(client, Duration.ofMinutes(1), delays).reportIncident(ALERT, constant(0), MS).join();
+    assertEquals(ms(2_000), delays.requests);
+  }
+
+  /// (l) A `retryAfter()` that throws is no wait.
+  @Test
+  void aThrowingRetryAfterIsNoWait() {
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> new WaitingClientException(true, () -> {
+      throw new IllegalStateException("unreadable");
+    });
+    final var delays = new RecordingDelays();
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      assertEquals("success", new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .reportIncident(ALERT, constant(0), MS).join().status());
+      assertFalse(recorder.logged("Retry-After"));
+    }
+    assertEquals(List.of(), delays.requests);
+    assertEquals(2, client.calls.get());
+  }
+
+  /// (l) B5: a non-retryable failure is not retried whatever its wait, and its log line gains
+  /// the wait, rounded to the call's unit; a failure without one logs today's line.
+  @Test
+  void aWaitIsAppendedToTheFailureLogLine() {
+    final var fatal = new TestClientException(false, new RetryAfterHttpResponse(429, "30"), 0);
+    final var client = new StubClient(Integer.MAX_VALUE, false);
+    client.failureFactory = () -> fatal;
+    final var delays = new RecordingDelays();
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .resolveIncident("key-l", constant(0), MS);
+      assertSame(fatal, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(List.of(
+          "Failure Count: 1, Last Delay: 0 MILLISECONDS, to resolve incident with key 'key-l'., Retry-After: 30000 MILLISECONDS"
+      ), recorder.messages());
+    }
+    assertEquals(List.of(), delays.requests);
+    assertEquals(1, client.calls.get());
+
+    final var wrapped = new StubClient(2, true);
+    wrapped.wrapFailures = true;
+    wrapped.failureFactory = inTurn(rateLimited("2"), new TestClientException(true, new TestHttpResponse(503), 42));
+    try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
+      new IncidentServiceVal(wrapped, Duration.ofMinutes(1), new RecordingDelays())
+          .resolveIncident("key-l", constant(0), TimeUnit.SECONDS).join();
+      assertEquals(List.of(
+          "Http Error Code: 429, Service Error Code: ?, Failure Count: 1, Last Delay: 0 SECONDS, Service Errors: [], to resolve incident with key 'key-l'., Retry-After: 2 SECONDS",
+          "Http Error Code: 503, Service Error Code: 42, Failure Count: 2, Last Delay: 0 SECONDS, Service Errors: [], to resolve incident with key 'key-l'."
+      ), recorder.messages());
+    }
+  }
+
+  /// (m) The longest header there is saturates: refused under any finite limit, and under a
+  /// limit that admits it, served as Long.MAX_VALUE of the call's unit without throwing.
+  @Test
+  void theLongestWaitSaturates() {
+    final var refused = rateLimited("9223372036854775807");
+    final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = () -> refused;
+    assertSame(refused, assertThrows(CompletionException.class,
+        () -> new IncidentServiceVal(client, Duration.ofDays(365_000), new RecordingDelays())
+            .reportIncident(ALERT, constant(0), MS).join()).getCause());
+
+    final var served = new StubClient(1, true);
+    served.failureFactory = () -> rateLimited("9223372036854775807");
+    final var delays = new RecordingDelays();
+    assertEquals("success", new IncidentServiceVal(served, Duration.ofSeconds(Long.MAX_VALUE), delays)
+        .reportIncident(ALERT, constant(0), MS).join().status());
+    assertEquals(ms(Long.MAX_VALUE), delays.requests);
+  }
+
+  /// (n) B8: a client that throws on the attempt made after a wait fails the returned future.
+  @Test
+  void aThrowAfterAWaitFailsTheFuture() {
+    final var thrown = new IllegalStateException("thrown on the delayed attempt");
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> rateLimited("30");
+    client.thrownSynchronously = thrown;
+    final var delays = new RecordingDelays();
+    final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays).reportIncident(ALERT, constant(0), MS);
+    assertTrue(future.isDone());
+    assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(ms(30_000), delays.requests);
+    assertEquals(2, client.calls.get());
+  }
+
+  /// A second delayed-executor seam: records each request when work is submitted to it and
+  /// queues the work instead of running it, so a test can look at the returned future before
+  /// the delayed attempt runs. A task that throws is dropped, as a pool thread would drop it,
+  /// and kept for the test to see.
+  private static final class QueuedDelays implements IncidentServiceVal.DelayedExecutorFactory {
+
+    private final List<Delay> requests = new ArrayList<>();
+    private final ArrayDeque<Runnable> queue = new ArrayDeque<>();
+    private final List<RuntimeException> escaped = new ArrayList<>();
+
+    @Override
+    public Executor delayedExecutor(final long delay, final TimeUnit unit) {
+      return task -> {
+        requests.add(new Delay(delay, unit));
+        queue.add(task);
+      };
+    }
+
+    private void drain() {
+      for (Runnable task; (task = queue.poll()) != null; ) {
+        try {
+          task.run();
+        } catch (final RuntimeException dropped) {
+          escaped.add(dropped);
+        }
+      }
+    }
+  }
+
+  /// (n) B8 with the delayed attempt run only after `reportIncident` has returned: the future
+  /// waits for it, then fails with what the client threw synchronously on it.
+  @Test
+  void aThrowOnAQueuedDelayedAttemptFailsTheFuture() {
+    final var thrown = new IllegalStateException("thrown on the queued delayed attempt");
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> rateLimited("30");
+    client.thrownSynchronously = thrown;
+    final var delays = new QueuedDelays();
+    final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays).reportIncident(ALERT, constant(0), MS);
+
+    assertFalse(future.isDone());
+    assertEquals(ms(30_000), delays.requests);
+    assertEquals(1, delays.queue.size());
+    assertEquals(1, client.calls.get());
+
+    delays.drain();
+
+    assertTrue(future.isDone());
+    assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(List.of(), delays.escaped);
+    assertEquals(2, client.calls.get());
+    assertEquals(ms(30_000), delays.requests);
+  }
+
+  /// (n) The queued delayed attempt's success completes the future with its response.
+  @Test
+  void aQueuedDelayedAttemptsSuccessCompletesTheFuture() {
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> rateLimited("30");
+    final var delays = new QueuedDelays();
+    final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays).reportIncident(ALERT, constant(0), MS);
+
+    assertFalse(future.isDone());
+    assertEquals(ms(30_000), delays.requests);
+    assertEquals(1, delays.queue.size());
+    assertEquals(1, client.calls.get());
+
+    delays.drain();
+
+    assertTrue(future.isDone());
+    final var response = future.join();
+    assertEquals("alert-key", response.key());
+    assertEquals("success", response.status());
+    assertEquals(List.of(), delays.escaped);
+    assertEquals(2, client.calls.get());
+  }
+
+  /// A retry-delay function negative for attempt 0 gives up before any attempt: every overload
+  /// that reaches it returns null, the client is never called and no delay is requested.
+  @Test
+  void aNegativeFirstDelayMakesNoAttempt() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, _ -> -1, MS),
+        service -> service.resolveIncident("key-c1", _ -> -1, MS),
+        service -> service.reportIncident(ALERT, -1, 1, 1, MS),
+        service -> service.resolveIncident("key-c1", -1, 1, 1, MS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var client = new StubClient(0, true);
+      final var delays = new RecordingDelays();
+      assertNull(calls.get(i).apply(new IncidentServiceVal(client, Duration.ofMinutes(1), delays)), "call " + i);
+      assertEquals(0, client.calls.get(), "call " + i);
+      assertEquals(List.of(), client.reports, "call " + i);
+      assertEquals(List.of(), client.resolvedKeys, "call " + i);
+      assertEquals(List.of(), delays.requests, "call " + i);
+    }
+  }
+
+  /// B6 compares the exact wait with the limit, before rounding: 30.2 s is within a 30.5 s
+  /// limit although it rounds up to 31 s, so it is served as 31 s and the next attempt made.
+  @Test
+  void theLimitComparesTheWaitBeforeRounding() {
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> new WaitingClientException(true, () -> Duration.ofMillis(30_200));
+    final var delays = new RecordingDelays();
+    final var response = new IncidentServiceVal(client, Duration.ofMillis(30_500), delays)
+        .reportIncident(ALERT, constant(0), TimeUnit.SECONDS).join();
+    assertEquals("success", response.status());
+    assertEquals(List.of(new Delay(31, TimeUnit.SECONDS)), delays.requests);
+    assertEquals(2, client.calls.get());
+  }
+
+  /// B6 holds regardless of `d`: a wait over the limit is refused even when the attempt's own
+  /// delay already covers it.
+  @Test
+  void theLimitHoldsWhenTheStepDelayCoversTheWait() {
+    final var failure = rateLimited("31");
+    final var client = new StubClient(1, true);
+    client.failureFactory = () -> failure;
+    final var delays = new RecordingDelays();
+    final var future = new IncidentServiceVal(client, Duration.ofSeconds(30), delays)
+        .reportIncident(ALERT, n -> n == 0 ? 40_000 : 0, MS);
+    assertSame(failure, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(ms(40_000), delays.requests, "only the failed attempt's own delay");
+    assertEquals(1, client.calls.get());
+  }
+
+  /// B2: `canBeRetried` is decided before the retry-delay function is asked about the next
+  /// attempt, so a non-retryable failure surfaces as itself, with or without a wait, and the
+  /// function sees attempt 0 alone.
+  @Test
+  void aNonRetryableFailureNeverAsksForTheNextDelay() {
+    for (final var fatal : List.of(
+        new TestClientException(false, new RetryAfterHttpResponse(429, "30"), 0),
+        new TestClientException(false))) {
+      final var client = new StubClient(Integer.MAX_VALUE, false);
+      client.failureFactory = () -> fatal;
+      final var delays = new RecordingDelays();
+      final var seen = new ArrayList<Long>();
+      final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
+          .reportIncident(ALERT, n -> {
+            seen.add(n);
+            return n == 0 ? 0 : -1;
+          }, MS);
+      assertSame(fatal, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(List.of(0L), seen);
+      assertEquals(List.of(), delays.requests);
+      assertEquals(1, client.calls.get());
+    }
+  }
+
+  /// (o) The limit is part of a service's identity; its text is today's.
+  @Test
+  void servicesForTheSameClientAndLimitAreEqual() {
+    final var client = new StubClient(0, true);
+    final var one = IncidentService.createService(client, Duration.ofSeconds(5));
+    final var two = IncidentService.createService(client, Duration.ofSeconds(5));
+    assertEquals(one, two);
+    assertEquals(one.hashCode(), two.hashCode());
+    assertNotEquals(one, IncidentService.createService(client, Duration.ofSeconds(6)));
+    assertEquals(IncidentService.createService(client), IncidentService.createService(client));
+    assertEquals("IncidentServiceVal[client=" + client + ']', one.toString());
+    assertEquals("IncidentServiceVal[client=" + client + ']', IncidentService.createService(client).toString());
   }
 }

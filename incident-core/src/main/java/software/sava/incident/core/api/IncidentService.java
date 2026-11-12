@@ -7,8 +7,26 @@ import java.util.function.LongUnaryOperator;
 
 /// Retrying wrapper around any [IncidentClient]. Failures whose cause implements
 /// [IncidentClientException] are retried only when [IncidentClientException#canBeRetried()]
-/// holds; transport-level failures are always retried. A retry-delay function maps the
-/// number of failures so far to the next delay, or a negative value to give up.
+/// holds; transport-level failures are always retried.
+///
+/// A retry-delay function maps an attempt number, counting from 0, to a delay in the call's
+/// [TimeUnit], or to a negative value to give up. It is applied once per attempt, before the
+/// attempt is made: attempt n is made at once, and if it fails, the value for n is served
+/// before the failure is handled and attempt n + 1 begins. A negative value for n + 1 gives
+/// up and fails the returned future; a negative value for 0 makes no attempt and returns
+/// null.
+///
+/// A provider that asks for a wait before the next attempt
+/// ([IncidentClientException#retryAfter()], such as a 429's `Retry-After`) has it waited
+/// out, rounded up to the call's unit, before the next attempt: whatever part of it the
+/// retry-delay function's value did not already cover. A wait longer than the service's
+/// limit is not served: the call ends at once with the provider's failure, whatever the
+/// retry count, so the caller can fall back rather than hold an alert. The limit belongs to
+/// the service and applies to every overload; it is [#DEFAULT_MAX_RETRY_AFTER] for
+/// [#createService(IncidentClient)], and set with
+/// [#createService(IncidentClient, Duration)]. The `giveUpAfter` overloads only derive a
+/// retry count from the step delay: they are not a timeout, and a provider's wait is not
+/// counted against them.
 ///
 /// A report with a null or blank alert key receives a generated key once per service
 /// call, shared by all attempts. A key longer than the client's
@@ -23,9 +41,24 @@ import java.util.function.LongUnaryOperator;
 /// Unsupported resolution is delegated once to the client without retries.
 public interface IncidentService {
 
+  /// The longest provider-requested wait [#createService(IncidentClient)] serves: one minute.
+  Duration DEFAULT_MAX_RETRY_AFTER = Duration.ofMinutes(1);
+
   /// Refuses a client whose [IncidentClient#maxKeyLength()] is under the 64-character digest.
+  /// Serves a provider-requested wait up to [#DEFAULT_MAX_RETRY_AFTER].
   static IncidentService createService(final IncidentClient client) {
-    return new IncidentServiceVal(client);
+    return createService(client, DEFAULT_MAX_RETRY_AFTER);
+  }
+
+  /// Refuses a client whose [IncidentClient#maxKeyLength()] is under the 64-character digest.
+  ///
+  /// @param maxRetryAfter the longest provider-requested wait this service serves before its
+  ///                      next attempt; a longer one ends the call at once with the provider's
+  ///                      failure. [Duration#ZERO] refuses every wait.
+  /// @throws NullPointerException     if `maxRetryAfter` is null
+  /// @throws IllegalArgumentException if `maxRetryAfter` is negative
+  static IncidentService createService(final IncidentClient client, final Duration maxRetryAfter) {
+    return new IncidentServiceVal(client, maxRetryAfter, IncidentServiceVal.DELAYED_EXECUTOR);
   }
 
   static LongUnaryOperator createRetryDelayFn(final long stepDelay, final long maxDelay) {

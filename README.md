@@ -192,6 +192,14 @@ provider shortened by `IncidentClient.boundKey`, to the key's first characters, 
 the SHA-256 of the whole key, the same way on every report and resolve, so an alert may be
 keyed by whatever identifies its subject and resolved by that key or by `response.key()`.
 
+`IncidentService.createService(incidentClient)` wraps a client with retries driven by a
+retry-delay function. When a provider asks for a wait before the next attempt, such as a
+429's `Retry-After`, the service waits it out before retrying, up to a limit of one minute
+by default (`IncidentService.DEFAULT_MAX_RETRY_AFTER`); a longer wait ends the call at once
+with the provider's failure, whatever the retry count, so an alert is never held for an
+hour in silence and the caller can fall back. `IncidentService.createService(incidentClient,
+maxRetryAfter)` sets another limit, and `Duration.ZERO` refuses every such wait.
+
 The incident.io adapter maps `IncidentSeverity` values onto workspace severity ids
 supplied at build time, and has no programmatic resolve: `supportsResolve()` returns
 `false` and `resolveIncident(String)` fails the returned future with an

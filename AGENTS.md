@@ -41,9 +41,14 @@ provider can be swapped via configuration:
   source, timestamp, custom details. Provider-specific features (PagerDuty links/images,
   incident.io custom fields/roles) stay on the provider clients.
 - `IncidentClientException` — implemented by every provider exception; carries
-  `canBeRetried()` so retry logic is provider-agnostic.
+  `canBeRetried()` so retry logic is provider-agnostic, and `retryAfter()`, the wait the
+  provider asked for (by default the `Retry-After` header's delta-seconds; incident.io's
+  request exception falls back to its body's `rate_limit.retry_after`).
 - `IncidentService` — retrying wrapper over any `IncidentClient` (retry-delay function,
-  max-retries / give-up-after variants).
+  max-retries / give-up-after variants). It waits out a provider's `retryAfter()` before
+  the next attempt up to the service's limit (`DEFAULT_MAX_RETRY_AFTER`, one minute, or
+  `createService(client, maxRetryAfter)`); a longer wait fails the call at once with the
+  provider's exception.
 
 Adapters: `PagerDutyIncidentClient` (dedup-key based, `details` carried in
 `custom_details`), `IncidentIoIncidentClient` (workspace-specific severity/type/status

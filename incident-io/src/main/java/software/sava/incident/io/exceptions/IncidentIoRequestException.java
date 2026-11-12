@@ -6,12 +6,17 @@ import systems.comodal.jsoniter.FieldMatcher;
 import systems.comodal.jsoniter.JsonIterator;
 
 import java.net.http.HttpResponse;
+import java.time.DateTimeException;
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME;
 
 /// A non-2xx incident.io response, carrying the error envelope and optional structured
 /// diagnostics. [#errors()] exposes readable messages; [#errorDetails()] also preserves
@@ -96,6 +101,41 @@ public final class IncidentIoRequestException extends RuntimeException implement
     return rateLimit;
   }
 
+  /// The wait incident.io asked for: the `Retry-After` header when it parses, as the schema
+  /// prefers; otherwise, when [RateLimit#retryAfter()] parses as an RFC 3339 instant and the
+  /// response carries an IMF-fixdate `Date` header, the time from that `Date` to the instant,
+  /// or [Duration#ZERO] when it is not ahead; otherwise null.
+  ///
+  /// incident.io documents the header for API-key requests only, and an alert-source 429
+  /// states the wait only in the error body. The server's own `Date` is the reference, so
+  /// the local clock is never read and its skew does not matter. Never throws.
+  @Override
+  public Duration retryAfter() {
+    final var header = IncidentClientException.retryAfter(httpResponse);
+    if (header != null) {
+      return header;
+    }
+    if (rateLimit == null || rateLimit.retryAfter() == null || httpResponse == null) {
+      return null;
+    }
+    final var headers = httpResponse.headers();
+    if (headers == null) {
+      return null;
+    }
+    final var date = headers.firstValue("Date");
+    if (date.isEmpty()) {
+      return null;
+    }
+    try {
+      final var until = OffsetDateTime.parse(rateLimit.retryAfter()).toInstant();
+      final var now = OffsetDateTime.parse(date.get(), RFC_1123_DATE_TIME).toInstant();
+      final var wait = Duration.between(now, until);
+      return wait.isPositive() ? wait : Duration.ZERO;
+    } catch (final DateTimeException unparseable) {
+      return null;
+    }
+  }
+
   /// Internal diagnostics supplied by the server, or null when absent.
   public DebugInfo debug() {
     return debug;
@@ -126,9 +166,9 @@ public final class IncidentIoRequestException extends RuntimeException implement
   }
 
   /// An `ErrorRateLimit`. `retryAfter` is the server's RFC 3339 UTC timestamp, preserved
-  /// as a string as specified by the schema. Prefer the `Retry-After` response header
-  /// (seconds until retry), available through [IncidentIoRequestException#httpResponse()],
-  /// when scheduling retries.
+  /// as a string as specified by the schema. To schedule a retry, use
+  /// [IncidentIoRequestException#retryAfter()]: it prefers the `Retry-After` response
+  /// header and falls back to this timestamp, measured from the response's `Date`.
   public record RateLimit(String name, long limit, long remaining, String retryAfter) {
   }
 
