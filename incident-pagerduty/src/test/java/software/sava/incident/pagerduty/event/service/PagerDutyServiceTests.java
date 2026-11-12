@@ -23,6 +23,7 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +33,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -165,13 +168,20 @@ final class PagerDutyServiceTests {
 
   private static final class TestCheckedClientException extends Exception implements PagerDutyClientException {
 
+    private final boolean canBeRetried;
+
     private TestCheckedClientException(final Throwable cause) {
-      super("fatal-checked", cause);
+      this(false, cause);
+    }
+
+    private TestCheckedClientException(final boolean canBeRetried, final Throwable cause) {
+      super(canBeRetried ? "retriable-checked" : "fatal-checked", cause);
+      this.canBeRetried = canBeRetried;
     }
 
     @Override
     public boolean canBeRetried() {
-      return false;
+      return canBeRetried;
     }
 
     @Override
@@ -334,22 +344,187 @@ final class PagerDutyServiceTests {
     assertEquals(1, client.calls.get());
   }
 
+  /// Each failure the factory makes, kept in `made` in the order the attempts met them; safe to
+  /// read once the returned future has been joined, whatever thread the retries ran on.
+  private static Supplier<Throwable> keptIn(final List<Throwable> made, final Supplier<Throwable> factory) {
+    return () -> {
+      final var failure = factory.get();
+      made.add(failure);
+      return failure;
+    };
+  }
+
   @Test
   void triggerGivesUpAfterMaxRetries() {
+    final var failures = new CopyOnWriteArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var future = service(client).triggerEvent(EVENT, 2, 1, 1, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    // join first: the retries run on the delayed executor's thread
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause(), "the last attempt's failure");
+  }
+
+  /// The three retrying calls of the service, each given a retry-delay function.
+  private static List<Function<StubClient, CompletableFuture<PagerDutyEventResponse>>> retryingCalls(
+      final LongUnaryOperator retryDelayFn) {
+    return List.of(
+        client -> service(client).triggerEvent(EVENT, retryDelayFn, TimeUnit.MILLISECONDS),
+        client -> service(client).changeEvent(CHANGE, retryDelayFn, TimeUnit.MILLISECONDS),
+        client -> service(client).resolveEvent("dedup-key", retryDelayFn, TimeUnit.MILLISECONDS));
+  }
+
+  /// The retry-delay function runs once before each attempt, once more at the give-up, and
+  /// only after a failure that can be retried; giving up fails the call with the last
+  /// attempt's failure. Zero delays keep every step inline, so the order is exact.
+  @Test
+  void theRetryDelayFunctionRunsBeforeEachAttemptAndOnceAtTheGiveUp() {
+    final var events = new ArrayList<String>();
+    final var values = new long[]{0, 0, -1};
+    final LongUnaryOperator fn = n -> {
+      events.add("fn " + n);
+      return values[(int) n];
+    };
+    for (final var call : retryingCalls(fn)) {
+      events.clear();
+      final var attempts = new AtomicInteger();
+      final var failures = new ArrayList<Throwable>();
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = keptIn(failures, () -> {
+        events.add("attempt " + attempts.getAndIncrement());
+        return new TestClientException(true);
+      });
+      final var thrown = assertThrows(CompletionException.class, call.apply(client)::join);
+      assertEquals(List.of("fn 0", "attempt 0", "fn 1", "attempt 1", "fn 2"), events);
+      assertEquals(2, failures.size());
+      assertSame(failures.getLast(), thrown.getCause(), "the last attempt's failure");
+    }
+  }
+
+  /// A failure that cannot be retried ends the call without asking the retry-delay function
+  /// again.
+  @Test
+  void theRetryDelayFunctionIsNotAskedAfterAFailureThatCannotBeRetried() {
+    final var events = new ArrayList<String>();
+    final LongUnaryOperator fn = n -> {
+      events.add("fn " + n);
+      return 0;
+    };
+    for (final var call : retryingCalls(fn)) {
+      events.clear();
+      final var attempts = new AtomicInteger();
+      final var failures = new ArrayList<Throwable>();
+      final var client = new StubClient(Integer.MAX_VALUE, false);
+      client.failureFactory = keptIn(failures, () -> {
+        events.add("attempt " + attempts.getAndIncrement());
+        return new TestClientException(false);
+      });
+      final var thrown = assertThrows(CompletionException.class, call.apply(client)::join);
+      assertEquals(List.of("fn 0", "attempt 0"), events);
+      assertSame(failures.getFirst(), thrown.getCause());
+    }
   }
 
   @Test
   void triggerGiveUpAfterDerivesMaxRetriesFromStepDelay() {
     // 10ms give-up / 5ms step -> 2 retries; maxDelay 0 keeps every retry immediate
+    final var failures = new CopyOnWriteArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var future = service(client)
         .triggerEvent(EVENT, Duration.ofMillis(10), 5, 0, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause(), "the last attempt's failure");
+  }
+
+  /// Running out of retries ends every operation, through every overload family that can give
+  /// up, after exactly `maxRetries + 1` attempts with the last attempt's failure itself.
+  @Test
+  void runningOutOfRetriesFailsWithTheLastAttemptsFailure() {
+    final List<java.util.function.Function<PagerDutyService, CompletableFuture<PagerDutyEventResponse>>> calls = List.of(
+        svc -> svc.triggerEvent(EVENT, 3, 0, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.triggerEvent(EVENT, PagerDutyService.createRetryDelayFn(3, 0, 0), TimeUnit.MILLISECONDS),
+        svc -> svc.triggerEvent(EVENT, Duration.ofMillis(15), 5, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.changeEvent(CHANGE, 3, 0, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.changeEvent(CHANGE, PagerDutyService.createRetryDelayFn(3, 0, 0), TimeUnit.MILLISECONDS),
+        svc -> svc.changeEvent(CHANGE, Duration.ofMillis(15), 5, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.resolveEvent("key-out", 3, 0, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.resolveEvent("key-out", PagerDutyService.createRetryDelayFn(3, 0, 0), TimeUnit.MILLISECONDS),
+        svc -> svc.resolveEvent("key-out", Duration.ofMillis(15), 5, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.resolveEvent(response("key-out"), 3, 0, 0, TimeUnit.MILLISECONDS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var failures = new CopyOnWriteArrayList<Throwable>();
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = keptIn(failures, () -> new TestClientException(true));
+      final var thrown = assertThrows(CompletionException.class, calls.get(i).apply(service(client))::join, "call " + i);
+      assertEquals(4, client.calls.get(), "call " + i);
+      assertEquals(4, failures.size(), "call " + i);
+      assertSame(failures.getLast(), thrown.getCause(), "call " + i);
+      assertNotSame(failures.getFirst(), thrown.getCause(), "call " + i);
+    }
+  }
+
+  /// Giving up surfaces the last failure in the shapes a non-retryable failure has, for each
+  /// operation: a runtime exception delivered bare as the cause, one an upstream stage wrapped in
+  /// a [CompletionException] as that wrapper's cause, a checked one's runtime cause, a checked one
+  /// whose cause is checked wrapped in a [RuntimeException], and a transport failure, no client
+  /// exception anywhere, as itself.
+  @Test
+  void aGiveUpSurfacesTheLastFailureInEveryShape() {
+    final List<java.util.function.Function<PagerDutyService, CompletableFuture<PagerDutyEventResponse>>> calls = List.of(
+        svc -> svc.triggerEvent(EVENT, 1, 0, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.changeEvent(CHANGE, 1, 0, 0, TimeUnit.MILLISECONDS),
+        svc -> svc.resolveEvent("key-shape", 1, 0, 0, TimeUnit.MILLISECONDS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var call = calls.get(i);
+
+      final var bare = new CopyOnWriteArrayList<Throwable>();
+      final var bareClient = new StubClient(Integer.MAX_VALUE, true);
+      bareClient.failureFactory = keptIn(bare, () -> new TestClientException(true));
+      final var bareThrown = assertThrows(CompletionException.class, call.apply(service(bareClient))::join);
+      assertSame(bare.getLast(), bareThrown.getCause(), "call " + i);
+      assertEquals(2, bareClient.calls.get(), "call " + i);
+
+      final var wrapped = new CopyOnWriteArrayList<Throwable>();
+      final var wrappedClient = new StubClient(Integer.MAX_VALUE, true);
+      wrappedClient.wrapFailures = true;
+      wrappedClient.failureFactory = keptIn(wrapped, () -> new TestClientException(true));
+      final var wrappedThrown = assertThrows(CompletionException.class, call.apply(service(wrappedClient))::join);
+      assertSame(wrapped.getLast(), wrappedThrown.getCause(), "call " + i);
+      assertEquals(2, wrappedClient.calls.get(), "call " + i);
+
+      final var runtimeCauses = new CopyOnWriteArrayList<Throwable>();
+      final var checkedClient = new StubClient(Integer.MAX_VALUE, true);
+      checkedClient.failureFactory = () -> {
+        final var cause = new IllegalStateException("cause-" + runtimeCauses.size());
+        runtimeCauses.add(cause);
+        return new TestCheckedClientException(true, cause);
+      };
+      final var checkedThrown = assertThrows(CompletionException.class, call.apply(service(checkedClient))::join);
+      assertSame(runtimeCauses.getLast(), checkedThrown.getCause(), "call " + i);
+      assertEquals(2, checkedClient.calls.get(), "call " + i);
+
+      final var checkedCauses = new CopyOnWriteArrayList<Throwable>();
+      final var bareCheckedClient = new StubClient(Integer.MAX_VALUE, true);
+      bareCheckedClient.failureFactory = () -> {
+        final var cause = new Exception("checked-" + checkedCauses.size());
+        checkedCauses.add(cause);
+        return new TestCheckedClientException(true, cause);
+      };
+      final var bareCheckedThrown = assertThrows(CompletionException.class, call.apply(service(bareCheckedClient))::join);
+      final var runtime = assertInstanceOf(RuntimeException.class, bareCheckedThrown.getCause(), "call " + i);
+      assertSame(checkedCauses.getLast(), runtime.getCause(), "call " + i);
+      assertEquals(2, bareCheckedClient.calls.get(), "call " + i);
+
+      final var transport = new CopyOnWriteArrayList<Throwable>();
+      final var transportClient = new StubClient(Integer.MAX_VALUE, true);
+      transportClient.failureFactory = keptIn(transport, () -> new RuntimeException("transport-" + transport.size()));
+      final var transportThrown = assertThrows(CompletionException.class, call.apply(service(transportClient))::join);
+      assertSame(transport.getLast(), transportThrown.getCause(), "call " + i);
+      assertEquals(2, transportClient.calls.get(), "call " + i);
+    }
   }
 
   @Test
@@ -439,11 +614,14 @@ final class PagerDutyServiceTests {
 
   @Test
   void changeEventGiveUpAfterDerivesMaxRetriesFromStepDelay() {
+    final var failures = new CopyOnWriteArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var future = service(client)
         .changeEvent(CHANGE, Duration.ofMillis(10), 5, 0, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause(), "the last attempt's failure");
   }
 
   @Test
@@ -641,11 +819,14 @@ final class PagerDutyServiceTests {
   void resolveGiveUpAfterDerivesMaxRetriesFromStepDelay() {
     // 10ms give-up / 5ms step -> 2 retries: the bound is a division of the two, so a
     // multiplication would let it retry far longer
+    final var failures = new CopyOnWriteArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var future = service(client)
         .resolveEvent("key-giveup", Duration.ofMillis(10), 5, 0, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause(), "the last attempt's failure");
   }
 
   @Test
@@ -657,7 +838,7 @@ final class PagerDutyServiceTests {
 
   @Test
   void resolveFatalFailuresPropagateEachThrowableShape() {
-    // the three arms of resolve's failure handler: a direct RuntimeException, a checked
+    // the three arms a failed resolve ends through: a direct RuntimeException, a checked
     // failure carrying a RuntimeException cause, and one carrying neither
     final var direct = new RuntimeException("direct-runtime");
     final var directClient = new StubClient(Integer.MAX_VALUE, false);
@@ -684,8 +865,7 @@ final class PagerDutyServiceTests {
   void aFatalFailureWithNoCauseIsWrappedAroundItself() {
     // the last arm of each failure handler: with a null cause the throwable itself is
     // wrapped, so the original stays reachable rather than being replaced by null.
-    // resolveEvent and triggerEvent inline this; changeEvent routes through
-    // throwRuntimeException -- all three need the same guarantee.
+    // All three operations route through throwRuntimeException and need the same guarantee.
     final var changeClient = new StubClient(Integer.MAX_VALUE, false);
     changeClient.failureFactory = () -> new TestCheckedClientException(null);
     final var changeWrapped = assertInstanceOf(RuntimeException.class, assertThrows(CompletionException.class,

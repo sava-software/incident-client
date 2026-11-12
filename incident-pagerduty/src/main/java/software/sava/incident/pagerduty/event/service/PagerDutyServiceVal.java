@@ -14,7 +14,6 @@ import java.util.function.LongUnaryOperator;
 
 import static java.lang.String.format;
 import static java.lang.System.Logger.Level.ERROR;
-import static java.util.Objects.requireNonNullElse;
 import static java.util.concurrent.CompletableFuture.delayedExecutor;
 
 record PagerDutyServiceVal(PagerDutyEventClient client,
@@ -102,14 +101,13 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to resolve event with dedupe key '%s'.", dedupeKey));
       if (canBeRetried(throwable)) {
-        return resolveEvent(dedupeKey, numFailures, retryDelayFn, timeUnit);
-      } else if (throwable instanceof final RuntimeException runtimeException) {
-        throw runtimeException;
-      } else if (throwable.getCause() instanceof final RuntimeException runtimeException) {
-        throw runtimeException;
-      } else {
-        throw new RuntimeException(throwable.getCause() == null ? throwable : throwable.getCause());
+        final var retried = resolveEvent(dedupeKey, numFailures, retryDelayFn, timeUnit);
+        if (retried != null) {
+          return retried;
+        }
+        // the retry-delay function gave up: the call ends with this attempt's failure
       }
+      throw throwRuntimeException(throwable);
     };
     if (retryDelay > 0) {
       return responseFuture.exceptionallyComposeAsync(exceptionally, delayedExecutor(retryDelay, timeUnit));
@@ -125,6 +123,10 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
     };
   }
 
+  /// Throws the failure as the returned future surfaces it when no further attempt is made
+  /// (it cannot be retried, or the retry-delay function gave up): a [RuntimeException] as is,
+  /// else its cause when that is a [RuntimeException], else a [RuntimeException] wrapping the
+  /// cause, or the failure itself when it has none.
   private static RuntimeException throwRuntimeException(final Throwable throwable) {
     if (throwable instanceof final RuntimeException runtimeException) {
       throw runtimeException;
@@ -182,14 +184,13 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to trigger event:%n  %s", payload));
       if (canBeRetried(throwable)) {
-        return triggerEvent(payload, numFailures, retryDelayFn, timeUnit);
-      } else if (throwable instanceof final RuntimeException runtimeException) {
-        throw runtimeException;
-      } else if (throwable.getCause() instanceof final RuntimeException runtimeException) {
-        throw runtimeException;
-      } else {
-        throw new RuntimeException(requireNonNullElse(throwable.getCause(), throwable));
+        final var retried = triggerEvent(payload, numFailures, retryDelayFn, timeUnit);
+        if (retried != null) {
+          return retried;
+        }
+        // the retry-delay function gave up: the call ends with this attempt's failure
       }
+      throw throwRuntimeException(throwable);
     };
     if (retryDelay > 0) {
       return responseFuture.exceptionallyComposeAsync(exceptionally, delayedExecutor(retryDelay, timeUnit));
@@ -246,10 +247,13 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to send change event:%n  %s", payload));
       if (canBeRetried(throwable)) {
-        return changeEvent(payload, numFailures, retryDelayFn, timeUnit);
-      } else {
-        throw throwRuntimeException(throwable);
+        final var retried = changeEvent(payload, numFailures, retryDelayFn, timeUnit);
+        if (retried != null) {
+          return retried;
+        }
+        // the retry-delay function gave up: the call ends with this attempt's failure
       }
+      throw throwRuntimeException(throwable);
     };
     if (retryDelay > 0) {
       return responseFuture.exceptionallyComposeAsync(exceptionally, delayedExecutor(retryDelay, timeUnit));
