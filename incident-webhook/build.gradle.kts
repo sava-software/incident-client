@@ -52,4 +52,14 @@ hardening {
     // format from scratch, but a finding still needs a committed seed replayed by check
     seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/format")
   }
+  fuzz.register("retryAfter") {
+    targetClass = "software.sava.incident.webhook.WebhookRetryAfterFuzz"
+    // the body is receiver-controlled and unbounded, but every token and nesting boundary
+    // the reader decides on shows in a few hundred bytes; the unit tests pin the 1 MB and
+    // 100,000-deep cases
+    maxLen = 4096
+    // regression corpus, not bootstrap: JSON structure is reachable by the mutator, and the
+    // canonical 429 body seeds both oracles; a finding needs a committed seed replayed by check
+    seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/retryAfter")
+  }
 }

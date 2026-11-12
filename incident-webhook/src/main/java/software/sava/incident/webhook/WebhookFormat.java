@@ -6,6 +6,11 @@ import software.sava.incident.core.api.IncidentAlert;
 /// only seam that varies between webhook receivers — transport, configuration, and error
 /// handling are shared — so supporting another product is one implementation of this
 /// interface; see [WebhookFormats] for the built-in formats.
+///
+/// One piece of product knowledge deliberately sits in the shared error handling instead:
+/// [software.sava.incident.webhook.exceptions.WebhookRequestException#retryAfter()] also
+/// reads the wait from a Telegram Bot API error body, so it works for whatever format
+/// posted the request, a custom one posting to Telegram included.
 public interface WebhookFormat {
 
   /// Renders `alert` as a complete JSON document. Every caller-supplied string must be

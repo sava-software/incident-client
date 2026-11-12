@@ -13,3 +13,22 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
   is trivial for the mutator to reach from scratch, so this corpus exists as the
   landing place for findings (each committed as a seed plus a named regression
   test), not to buy coverage.
+
+## `retryAfter/` (regression corpus for `WebhookRetryAfterFuzz`)
+
+The harness reads each input twice: whole, as a failure's body bytes (oracle 1, garbage
+in), and split, as a big-endian `long` in its first eight bytes followed by a UTF-8
+description that it wraps in the Bot API's 429 body (oracle 2, round trip).
+
+- `canonical-429.json` — the Bot API's 429 error body as its server writes it,
+  `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 35","parameters":{"retry_after":35}}`,
+  taken from the Bot API page's `ResponseParameters` and `tdlib/telegram-bot-api`'s
+  `Query.cpp`. Oracle 1 reads it as a 35-second wait; oracle 2 reads its first eight
+  bytes, `{"ok":fa`, as `n` = 8872776721799734881 and the rest as the description.
+- `retry-after-35.bin` — the oracle-2 layout written out: `n` = 35 as eight big-endian
+  bytes (`00 00 00 00 00 00 00 23`), then `Too Many Requests: retry after 35`. Oracle 1
+  reads it as no wait.
+
+Both exist as the landing place for findings (each committed as a seed plus a named
+regression test), not to buy coverage, and have not been measured against a mutation
+score.

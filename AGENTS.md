@@ -29,7 +29,9 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`, and the
   stateful `TelegramTextFormat` under `telegram` — chat id from config, Bot API
   `sendMessage` endpoint). Notification only — no incident lifecycle,
-  `supportsResolve()` is false.
+  `supportsResolve()` is false. One deliberate exception to the isolation: the shared
+  `WebhookRequestException.retryAfter()` also reads a Telegram Bot API error body's
+  `parameters.retry_after`, so it works whatever format posted the request.
 - `incident-examples/` — runnable usage examples; not published.
 
 ### Provider-neutral API (`software.sava.incident.core.api`)
@@ -47,7 +49,8 @@ provider can be swapped via configuration:
   provider asked for (by default the `Retry-After` header, in either RFC 9110 form:
   delay-seconds, or an HTTP-date measured from the response's own `Date` header, never the
   local clock; incident.io's request exception falls back to its body's
-  `rate_limit.retry_after`).
+  `rate_limit.retry_after`, and the webhook request exception to a Telegram Bot API error
+  body's `parameters.retry_after`).
 - `IncidentService` — retrying wrapper over any `IncidentClient` (retry-delay function,
   max-retries / give-up-after variants). It waits out a provider's `retryAfter()` before
   the next attempt up to the service's limit (`DEFAULT_MAX_RETRY_AFTER`, one minute, or
@@ -79,6 +82,11 @@ truth. Verify against them, not against this repo's existing output:
   `Alert Events V2#CreateHTTP`, `POST /v2/alert_events/http/{alert_source_config_id}`)
   for the alert-source client.
   `https://docs.incident.io/api-reference` (Create Incident V2) is the prose companion.
+- **Telegram** — the Bot API page `https://core.telegram.org/bots/api` (`sendMessage`,
+  `ResponseParameters`, "Making requests") is the contract for the `telegram` provider; the
+  server source `https://github.com/tdlib/telegram-bot-api` (`telegram-bot-api/Query.cpp`,
+  `HttpConnection.cpp`) shows what the page leaves out: an error's HTTP status is its
+  `error_code`, and a 429 carries a `Retry-After` header beside `parameters.retry_after`.
 
 Clone reference repos outside this repository (or in a git-ignored location), record the
 paths in `AGENTS.local.md`, and `git pull` an existing clone before comparing.
@@ -105,7 +113,9 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
   request body over 512 KiB (524,288 UTF-8 bytes) is refused before sending.
 - Optional fields are omitted when null/blank — never serialized as `"null"` or `""`.
 - Response parsing contract: unknown fields are skipped; malformed input fails with a
-  `RuntimeException`, never anything else (the fuzz targets enforce this).
+  `RuntimeException`, never anything else (the response parsers' fuzz targets enforce
+  this). `WebhookRequestException.retryAfter()` is the exception: its body reader never
+  throws, and reads leniently, so any body gives null or a positive wait.
 
 ## Build, test, and hardening
 
@@ -119,11 +129,11 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
 ./gradlew :<module>:fuzz<Target>                 # Jazzer fuzzing:
                                                  #   :incident-io:fuzzRequest|fuzzResponse|fuzzAlertEvent|fuzzAlertEventResponse
                                                  #   :incident-pagerduty:fuzzPayload
-                                                 #   :incident-webhook:fuzzFormat
+                                                 #   :incident-webhook:fuzzFormat|fuzzRetryAfter
 ./gradlew :<module>:hardeningHelp                # installed-version authority; run it
 ```
 
-Those fifteen suites and six fuzz targets are this repo's inventory, declared in each
+Those fifteen suites and seven fuzz targets are this repo's inventory, declared in each
 module's `build.gradle.kts` under the `hardening` extension (from sava-build's
 `software.sava.build.feature.hardening` plugin). Everything else about the tooling — what
 each writer task does, which properties exist, which have been refused — comes from
@@ -157,17 +167,18 @@ Conventions to preserve:
   `JsonIterator`, and compare against the documented transform. When you add or change a
   serialized field, extend the fuzz oracle *and* add an exact-string unit test — the
   mutation suites only measure what the unit tests pin down.
-- Parser fuzz targets follow the "garbage in → RuntimeException out" contract, and their
-  seed corpora live under `src/test/resources/fuzz/<target>/`.
+- The response parsers' fuzz targets follow the "garbage in → RuntimeException out"
+  contract; `retryAfter` is the exception, its reader never throws and gives null or a
+  positive wait. Parser seed corpora live under `src/test/resources/fuzz/<target>/`.
 - Every fuzz target here declares a `seedCorpus`. A corpus does two independent jobs:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
   and *regression* (a committed landing place for findings — the `request`, `alertEvent`,
-  `alertEventResponse`, `payload` and `format` corpora; the `request`, `payload` and
-  `format` corpora were measured to change no mutation score, and the `alertEvent` and
-  `alertEventResponse` corpora have not been measured). "The mutator reaches this format
-  from scratch" answers only the bootstrap question. All six targets here declare one; if
-  a future target genuinely does neither job, take the decline property from
-  `:<module>:hardeningHelp`, and record the measurement that justified it the way an
+  `alertEventResponse`, `payload`, `format` and `retryAfter` corpora; the `request`,
+  `payload` and `format` corpora were measured to change no mutation score, and the
+  `alertEvent`, `alertEventResponse` and `retryAfter` corpora have not been measured). "The
+  mutator reaches this format from scratch" answers only the bootstrap question. All seven
+  targets here declare one; if a future target genuinely does neither job, take the decline
+  property from `:<module>:hardeningHelp`, and record the measurement that justified it the way an
   acceptance is argued. Seed provenance goes in a README next to — never inside — the
   corpus dir.
 - Our copy-on-write builder acceptances (`# copy-on-write` / `# defensive-copy` in

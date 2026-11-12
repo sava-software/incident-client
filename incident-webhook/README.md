@@ -7,7 +7,9 @@ posts, such as a [Slack incoming webhook](https://docs.slack.dev/messaging/sendi
 A webhook message is fire-and-forget notification, not incident management: there is no
 incident id, permalink, or lifecycle, and `supportsResolve()` is `false`. Transport,
 configuration, and error handling are shared across all formats; the only per-product
-variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON body.
+variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON body. One
+deliberate exception sits in the shared error handling: a failure also reads the wait
+from a Telegram Bot API error body, whatever format posted the request.
 
 ## Formats
 
@@ -85,7 +87,13 @@ to truncation with the rest of the message.
 `status()` is the receiver's stripped response body (`ok` for Slack) or `delivered`
 when the body is empty, and `url()` is null. Non-2xx responses fail with a
 `WebhookRequestException` whose message carries the status and response body but never
-the endpoint URL — webhook URLs are credentials.
+the endpoint URL — webhook URLs are credentials. Its `retryAfter()`, the wait
+`IncidentService` serves before the next attempt, is the `Retry-After` header when it
+parses (delay-seconds, or an HTTP-date measured from the response's `Date`); otherwise,
+when the body is a Telegram Bot API error, `{"ok":false,...,"parameters":{"retry_after":35}}`,
+its `retry_after` in seconds. The Bot API documents the wait in that body; its server
+also sends the header. This reader sits in the shared failure, not in a `WebhookFormat`,
+so it works for a custom format posting to Telegram too.
 
 ## Writing Your Own Provider
 

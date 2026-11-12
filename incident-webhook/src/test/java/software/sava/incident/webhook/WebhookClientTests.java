@@ -15,6 +15,7 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -32,16 +33,24 @@ final class WebhookClientTests {
   private record RecordedRequest(String method, Map<String, List<String>> headers, byte[] rawBody, String body) {
   }
 
-  /// Single-exchange test server: records the request and replies with `statusCode` and
-  /// `responseBody` (no body when null).
+  /// Single-exchange test server: records the request and replies with `statusCode`,
+  /// `responseHeaders` and `responseBody` (no body when null).
   private static final class RecordingHandler implements HttpHandler {
 
     private final int statusCode;
+    private final Map<String, String> responseHeaders;
     private final String responseBody;
     private final ConcurrentLinkedQueue<RecordedRequest> requests = new ConcurrentLinkedQueue<>();
 
     private RecordingHandler(final int statusCode, final String responseBody) {
+      this(statusCode, Map.of(), responseBody);
+    }
+
+    private RecordingHandler(final int statusCode,
+                             final Map<String, String> responseHeaders,
+                             final String responseBody) {
       this.statusCode = statusCode;
+      this.responseHeaders = responseHeaders;
       this.responseBody = responseBody;
     }
 
@@ -50,6 +59,7 @@ final class WebhookClientTests {
       try (exchange) {
         final var rawBody = exchange.getRequestBody().readAllBytes();
         requests.add(new RecordedRequest(exchange.getRequestMethod(), exchange.getRequestHeaders(), rawBody, new String(rawBody, UTF_8)));
+        responseHeaders.forEach(exchange.getResponseHeaders()::set);
         if (responseBody == null) {
           exchange.sendResponseHeaders(statusCode, -1);
         } else {
@@ -187,6 +197,43 @@ final class WebhookClientTests {
       final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
       assertEquals(503L, cause.errorCode());
       assertTrue(cause.canBeRetried());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  private static final String TELEGRAM_TOO_MANY_REQUESTS = """
+      {"ok":false,"error_code":429,"description":"Too Many Requests: retry after 35","parameters":{"retry_after":35}}""";
+
+  /// A Bot API 429 states the wait in its body; without a `Retry-After` header the failure
+  /// still carries it.
+  @Test
+  void aTelegramBodyCarriesTheWait() throws IOException {
+    final var server = startServer(new RecordingHandler(429, TELEGRAM_TOO_MANY_REQUESTS));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}").join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(429L, cause.errorCode());
+      assertTrue(cause.canBeRetried());
+      assertEquals(Duration.ofSeconds(35), cause.retryAfter());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void aRetryAfterHeaderWinsOverTheTelegramBody() throws IOException {
+    final var server = startServer(new RecordingHandler(429, Map.of("Retry-After", "7"), TELEGRAM_TOO_MANY_REQUESTS));
+    try {
+      final var client = WebhookClient.clientBuilder()
+          .endpoint(endpoint(server))
+          .createClient();
+      final var ex = assertThrows(CompletionException.class, () -> client.post("{}").join());
+      final var cause = assertInstanceOf(WebhookRequestException.class, ex.getCause());
+      assertEquals(Duration.ofSeconds(7), cause.retryAfter());
     } finally {
       server.stop(0);
     }
