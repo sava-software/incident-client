@@ -554,12 +554,128 @@ final class IncidentServiceTests {
 
   @Test
   void givesUpAfterMaxRetries() {
+    final var failures = new ArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var service = IncidentService.createService(client);
 
     final var future = service.reportIncident(ALERT, 2, 1, 1, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    // join first: the retries run on the delayed executor's thread
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause());
+  }
+
+  /// Each failure the factory makes, kept in `made` in the order the attempts met them.
+  private static Supplier<Throwable> keptIn(final List<Throwable> made, final Supplier<Throwable> factory) {
+    return () -> {
+      final var failure = factory.get();
+      made.add(failure);
+      return failure;
+    };
+  }
+
+  /// A max-retries call against a client that always fails with a retryable error ends, after
+  /// exactly `maxRetries + 1` attempts, with the last attempt's failure itself, on report and on
+  /// resolve.
+  @Test
+  void runningOutOfRetriesFailsWithTheLastAttemptsFailure() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, 3, 0, 0, MS),
+        service -> service.resolveIncident("key-out", 3, 0, 0, MS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var failures = new ArrayList<Throwable>();
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = keptIn(failures, () -> new TestClientException(true));
+      final var delays = new RecordingDelays();
+      final var future = calls.get(i).apply(new IncidentServiceVal(client, Duration.ofMinutes(1), delays));
+      final var thrown = assertThrows(CompletionException.class, future::join, "call " + i);
+      assertEquals(4, client.calls.get(), "call " + i);
+      assertEquals(4, failures.size(), "call " + i);
+      assertSame(failures.getLast(), thrown.getCause(), "call " + i);
+      assertNotSame(failures.getFirst(), thrown.getCause(), "call " + i);
+      assertEquals(List.of(), delays.requests, "call " + i);
+    }
+  }
+
+  /// Giving up surfaces the last failure in the shapes a non-retryable failure has: a runtime
+  /// exception delivered bare as the cause, one an upstream stage wrapped in a
+  /// [CompletionException] as that wrapper's cause, a checked one's runtime cause, and a checked
+  /// one whose cause is checked wrapped in a [RuntimeException]; on report and on resolve.
+  @Test
+  void aGiveUpSurfacesTheLastFailureInEveryShape() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, 1, 0, 0, MS),
+        service -> service.resolveIncident("key-shape", 1, 0, 0, MS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var call = calls.get(i);
+
+      final var bare = new ArrayList<Throwable>();
+      final var bareClient = new StubClient(Integer.MAX_VALUE, true);
+      bareClient.failureFactory = keptIn(bare, () -> new TestClientException(true));
+      final var bareThrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(bareClient))::join);
+      assertSame(bare.getLast(), bareThrown.getCause(), "call " + i);
+      assertEquals(2, bareClient.calls.get(), "call " + i);
+
+      final var wrapped = new ArrayList<Throwable>();
+      final var wrappedClient = new StubClient(Integer.MAX_VALUE, true);
+      wrappedClient.wrapFailures = true;
+      wrappedClient.failureFactory = keptIn(wrapped, () -> new TestClientException(true));
+      final var wrappedThrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(wrappedClient))::join);
+      assertSame(wrapped.getLast(), wrappedThrown.getCause(), "call " + i);
+      assertEquals(2, wrappedClient.calls.get(), "call " + i);
+
+      final var runtimeCauses = new ArrayList<Throwable>();
+      final var checkedClient = new StubClient(Integer.MAX_VALUE, true);
+      checkedClient.failureFactory = () -> {
+        final var cause = new IllegalStateException("cause-" + runtimeCauses.size());
+        runtimeCauses.add(cause);
+        return new WaitingCheckedClientException(cause, null);
+      };
+      final var checkedThrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(checkedClient))::join);
+      assertSame(runtimeCauses.getLast(), checkedThrown.getCause(), "call " + i);
+      assertEquals(2, checkedClient.calls.get(), "call " + i);
+
+      final var checkedCauses = new ArrayList<Throwable>();
+      final var bareCheckedClient = new StubClient(Integer.MAX_VALUE, true);
+      bareCheckedClient.failureFactory = () -> {
+        final var cause = new Exception("checked-" + checkedCauses.size());
+        checkedCauses.add(cause);
+        return new WaitingCheckedClientException(cause, null);
+      };
+      final var bareCheckedThrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(bareCheckedClient))::join);
+      final var runtime = assertInstanceOf(RuntimeException.class, bareCheckedThrown.getCause(), "call " + i);
+      assertSame(checkedCauses.getLast(), runtime.getCause(), "call " + i);
+      assertEquals(2, bareCheckedClient.calls.get(), "call " + i);
+    }
+  }
+
+  /// A transport failure, no [IncidentClientException] anywhere, is retried and on giving up
+  /// surfaces as itself; a checked one an upstream stage wrapped in a [CompletionException]
+  /// surfaces as that wrapper, the transport failure its cause.
+  @Test
+  void aTransportFailureSurfacesAsItselfOnAGiveUp() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, 2, 0, 0, MS),
+        service -> service.resolveIncident("key-transport", 2, 0, 0, MS));
+    for (int i = 0; i < calls.size(); ++i) {
+      final var call = calls.get(i);
+
+      final var transport = new ArrayList<Throwable>();
+      final var client = new StubClient(Integer.MAX_VALUE, true);
+      client.failureFactory = keptIn(transport, () -> new RuntimeException("transport-" + transport.size()));
+      final var thrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(client))::join);
+      assertSame(transport.getLast(), thrown.getCause(), "call " + i);
+      assertEquals(3, client.calls.get(), "call " + i);
+
+      final var resets = new ArrayList<Throwable>();
+      final var wrappedClient = new StubClient(Integer.MAX_VALUE, true);
+      wrappedClient.wrapFailures = true;
+      wrappedClient.failureFactory = keptIn(resets, () -> new java.io.IOException("connection reset-" + resets.size()));
+      final var wrappedThrown = assertThrows(CompletionException.class, call.apply(IncidentService.createService(wrappedClient))::join);
+      assertSame(resets.getLast(), wrappedThrown.getCause(), "call " + i);
+      assertEquals(3, wrappedClient.calls.get(), "call " + i);
+    }
   }
 
   @Test
@@ -614,17 +730,23 @@ final class IncidentServiceTests {
   @Test
   void giveUpAfterDerivesMaxRetriesFromStepDelay() {
     // 10ms give-up / 5ms step -> 2 retries; maxDelay 0 keeps every retry immediate
+    final var failures = new ArrayList<Throwable>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = keptIn(failures, () -> new TestClientException(true));
     final var future = IncidentService.createService(client)
         .reportIncident(ALERT, Duration.ofMillis(10), 5, 0, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, future::join);
+    final var thrown = assertThrows(CompletionException.class, future::join);
     assertEquals(3, client.calls.get());
+    assertSame(failures.getLast(), thrown.getCause());
 
+    final var resolveFailures = new ArrayList<Throwable>();
     final var resolveClient = new StubClient(Integer.MAX_VALUE, true);
+    resolveClient.failureFactory = keptIn(resolveFailures, () -> new TestClientException(true));
     final var resolveFuture = IncidentService.createService(resolveClient)
         .resolveIncident("key-giveup", Duration.ofMillis(10), 5, 0, TimeUnit.MILLISECONDS);
-    assertThrows(CompletionException.class, resolveFuture::join);
+    final var resolveThrown = assertThrows(CompletionException.class, resolveFuture::join);
     assertEquals(3, resolveClient.calls.get());
+    assertSame(resolveFailures.getLast(), resolveThrown.getCause());
   }
 
   @Test
@@ -1009,17 +1131,18 @@ final class IncidentServiceTests {
   }
 
   /// (g) A retry-delay function that gives up wins: no wait is served, whether or not it is
-  /// within the limit, and the give-up signal is today's.
+  /// within the limit, and the call ends with the failed attempt's error.
   @Test
   void aGiveUpServesNoWait() {
     for (final var header : List.of("30", "3600")) {
+      final var failure = rateLimited(header);
       final var client = new StubClient(Integer.MAX_VALUE, true);
-      client.failureFactory = () -> rateLimited(header);
+      client.failureFactory = () -> failure;
       final var delays = new RecordingDelays();
       final var future = new IncidentServiceVal(client, Duration.ofMinutes(1), delays)
           .reportIncident(ALERT, n -> n == 0 ? 0 : -1, MS);
       final var thrown = assertThrows(CompletionException.class, future::join);
-      assertInstanceOf(NullPointerException.class, thrown.getCause(), header);
+      assertSame(failure, thrown.getCause(), header);
       assertEquals(List.of(), delays.requests);
       assertEquals(1, client.calls.get());
     }
@@ -1033,10 +1156,13 @@ final class IncidentServiceTests {
     final var events = new ArrayList<String>();
     final var values = new long[]{0, 7, 3, -1};
     final var attempts = new AtomicInteger();
+    final var failures = new ArrayList<TestClientException>();
     final var client = new StubClient(Integer.MAX_VALUE, true);
     client.failureFactory = () -> {
       events.add("attempt " + attempts.getAndIncrement());
-      return new TestClientException(true);
+      final var failure = new TestClientException(true);
+      failures.add(failure);
+      return failure;
     };
     final var delays = new RecordingDelays(events);
     try (final var recorder = JulRecorder.attach(LOGGER_NAME)) {
@@ -1045,7 +1171,9 @@ final class IncidentServiceTests {
             events.add("fn " + n);
             return values[(int) n];
           }, MS);
-      assertInstanceOf(NullPointerException.class, assertThrows(CompletionException.class, future::join).getCause());
+      final var thrown = assertThrows(CompletionException.class, future::join);
+      assertEquals(3, failures.size());
+      assertSame(failures.getLast(), thrown.getCause());
       assertEquals(List.of(
           "Failure Count: 1, Last Delay: 0 MILLISECONDS, to resolve incident with key 'key-h'.",
           "Failure Count: 2, Last Delay: 7 MILLISECONDS, to resolve incident with key 'key-h'.",

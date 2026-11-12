@@ -13,8 +13,13 @@ import java.util.function.LongUnaryOperator;
 /// [TimeUnit], or to a negative value to give up. It is applied once per attempt, before the
 /// attempt is made: attempt n is made at once, and if it fails, the value for n is served
 /// before the failure is handled and attempt n + 1 begins. A negative value for n + 1 gives
-/// up and fails the returned future; a negative value for 0 makes no attempt and returns
-/// null.
+/// up and fails the returned future with attempt n's failure, as a failure that cannot be
+/// retried fails it; a negative value for 0 makes no attempt and returns null.
+///
+/// Whenever no further attempt is made, the returned future fails with the last attempt's
+/// failure: a [RuntimeException] as is (including the [java.util.concurrent.CompletionException]
+/// an upstream stage wrapped it in), else its cause when that is a [RuntimeException], else a
+/// [RuntimeException] wrapping the cause, or the failure itself when it has none.
 ///
 /// A provider that asks for a wait before the next attempt
 /// ([IncidentClientException#retryAfter()], such as a 429's `Retry-After`) has it waited

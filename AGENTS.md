@@ -52,7 +52,8 @@ provider can be swapped via configuration:
   max-retries / give-up-after variants). It waits out a provider's `retryAfter()` before
   the next attempt up to the service's limit (`DEFAULT_MAX_RETRY_AFTER`, one minute, or
   `createService(client, maxRetryAfter)`); a longer wait fails the call at once with the
-  provider's exception.
+  provider's exception. When the retry-delay function gives up, the call fails the same way,
+  with the last attempt's failure.
 
 Adapters: `PagerDutyIncidentClient` (dedup-key based, `details` carried in
 `custom_details`), `IncidentIoIncidentClient` (workspace-specific severity/type/status

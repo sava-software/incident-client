@@ -100,7 +100,8 @@ record IncidentServiceVal(IncidentClient client,
         : converted;
   }
 
-  /// The failure as the returned future surfaces it when no further attempt is made.
+  /// The failure as the returned future surfaces it when no further attempt is made: it cannot
+  /// be retried, its provider's wait is over the limit, or the retry-delay function gave up.
   private static RuntimeException terminal(final Throwable throwable) {
     if (throwable instanceof final RuntimeException runtimeException) {
       return runtimeException;
@@ -142,7 +143,8 @@ record IncidentServiceVal(IncidentClient client,
       }
       final long nextDelay = retryDelayFn.applyAsLong(numFailures);
       if (nextDelay < 0) {
-        return null;
+        // giving up: the call ends with this attempt's failure
+        throw terminal(throwable);
       }
       if (serverWait != null && serverWait.compareTo(maxRetryAfter) > 0) {
         throw terminal(throwable);
