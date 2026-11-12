@@ -64,17 +64,20 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   optional again, or a collection section were reordered ahead of it, these become
   reachable and this argument must be re-read. The guards stay because they are what keeps
   that reordering safe.
-- `# unreachable-1xx` (adapter: `IncidentIoClientImpl.lambda$static$0`,
-  `RemoveConditionalMutator_ORDER_IF` on the `statusCode < 200` arm of the response
+- `# unreachable-1xx` (adapter: `IncidentIoClientImpl.lambda$static$0` and
+  `alert.IncidentIoAlertEventClientImpl.lambda$static$0`, one
+  `RemoveConditionalMutator_ORDER_IF` each on the `statusCode < 200` arm of the response
   gate) — the mutant is observable only with a *final* HTTP status below 200, and
   `java.net.http.HttpClient` never surfaces one: 1xx interim responses are consumed
   inside the protocol layer, and `jdk.httpserver` refuses to emit them as a final
   status. Unreachable in-harness; a raw-socket harness writing a literal sub-200 status
   line would hang until the request timeout, and a flaky harness is worse than recorded
-  debt. The `>= 300` arm is pinned by the 300/400/503 wire tests. Mirrors the same
-  acceptance in `incident-webhook` and `incident-pagerduty`.
-- `# always-true-delegate` (config: `IncidentIoConfig$Parser.test`,
-  `BooleanTrueReturnValsMutator`) — `return super.test(...)` where the superclass
+  debt. The `>= 300` arm is pinned by the 300/400/503 wire tests, and for the alert
+  client by its 300, 401 and 429 wire tests against its 200 and 202 successes. Mirrors
+  the same acceptance in `incident-webhook` and `incident-pagerduty`.
+- `# always-true-delegate` (config: `IncidentIoConfig$Parser.test` and
+  `IncidentIoAlertSourceConfig$Parser.test`, one
+  `BooleanTrueReturnValsMutator` each) — `return super.test(...)` where the superclass
   either returns true or throws on unknown fields; the mutated constant-true return
   preserves the call and its side effects, so no input can distinguish it. Escape
   hatch: a superclass path that returns false would make the propagation observable.

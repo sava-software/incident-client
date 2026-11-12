@@ -25,7 +25,8 @@ carry them.
   triaged 2026-07-24: 21 killed with new tests (retry-delay arithmetic,
   give-up-after call counts, checked-exception propagation, transport-failure
   retries, blank/absent config values, and JUL-captured failure logging via
-  the generated `JulRecorder`), 8 accepted below.
+  the generated `JulRecorder`), 8 accepted (the three `# async-routing` rows among
+  them were retired 2026-11-12).
 - None for `client`. The suite was added 2026-08-06, when `core.client.*` and
   `core.request.*` were found to have no mutation-suite owner — this repo runs
   `:incident-core:mutationOwnershipAudit` before handoff. The exported
@@ -81,13 +82,17 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   block complete, and a harness whose result depended on whether the module-path
   `test` task or PIT's classpath minion discovered it is exactly what doctrine
   forbids committing.
-- `# async-routing` (api: `IncidentServiceVal.retry` ×3 —
-  `ConditionalsBoundaryMutator` plus both `RemoveConditionalMutator_ORDER_*`) — the
-  `retryDelay > 0` guard routes between
-  `exceptionallyComposeAsync(delayedExecutor(...))` and `exceptionallyCompose`: at
-  delay 0 both produce identical results and differ only in which thread runs the
-  continuation; a positive delay is distinguishable only by wall-clock timing, which
-  the determinism rules prohibit asserting. Escape hatch: a clock seam injected into
-  the service (replacing `delayedExecutor`) would make the routing assertable.
+- `# async-routing` — retired 2026-11-12; no row carries it. It argued the
+  `retryDelay > 0` guard in `IncidentServiceVal.retry`, which routes the failure handler
+  between `exceptionallyComposeAsync(delayedExecutor(...))` and `exceptionallyCompose`
+  and could be told apart only by wall-clock timing. Its escape hatch was taken: the
+  service now takes its delayed executors from a package-private
+  `DelayedExecutorFactory` record component, the guard lives in `attempt`, and
+  `IncidentServiceTests#withoutAServerWaitTheTimelineIsTodays` pins the routing both
+  ways (nothing requested at delay 0, exactly the delay and unit otherwise). `retry`
+  keeps only the give-up before the first attempt, pinned by
+  `aNegativeFirstDelayMakesNoAttempt`. The three rows were dropped with
+  `pitestApiBaselinePrune` after two matching fresh history-free previews and the
+  write-boundary run. An unkilled mutant in either method is new debt, not this family.
 
 Growing a baseline requires a reason here.

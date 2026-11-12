@@ -46,8 +46,9 @@ grouped by the principle that makes it equivalent.
     428/430/499 boundaries, every constructor's response/cause/buffer wiring, the error
     list growing none → one → many with immutability above one, and `toString`.
   - `PagerDutyEventClientBuilderTests` covers the client builder's accessors and the
-    branch that chooses *which* request decorator gets installed: absent, blank and
-    present auth tokens, and a caller-supplied `extendRequest` that must be left alone.
+    branch that chooses *which* request decorator gets installed: the default one, which
+    sets `Content-Type` and no `Authorization` header (the `authToken` option that used
+    to add one is gone), and a caller-supplied `extendRequest` that must be left alone.
 
   One observation worth keeping: the first widened multi-suite run reported a `RUN_ERROR`
   at `PagerDutyEventClient.asIncidentClient` (`NullReturnValsMutator`) — the default
@@ -92,8 +93,9 @@ in HARDENING.md); the baseline CSVs carry the exact keys.
   wall-clock timing, which the determinism rules prohibit asserting. Both directions are
   exercised (the retry tests use a positive step delay, the logging tests use 0), so the
   arms are covered — only the *choice between them* is unobservable. Escape hatch: a clock
-  seam replacing `delayedExecutor` would make the routing assertable. Mirrors the same
-  acceptance on `incident-core`'s `IncidentServiceVal.retry`.
+  seam replacing `delayedExecutor` would make the routing assertable. `incident-core`
+  took that hatch for `IncidentServiceVal` and retired the same acceptance there on
+  2026-11-12; `PagerDutyServiceVal` has no such seam, so the argument stands here.
 - `# copy-on-write` (adapter: `PagerDutyRequestExceptionBuilder.create`) — the
   `errors.size() > 1` boundary mutated to `>=`: at exactly one error the list is already
   the immutable `List.of(error)`, so wrapping it in `unmodifiableList` yields a
