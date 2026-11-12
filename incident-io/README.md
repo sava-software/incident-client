@@ -9,6 +9,10 @@ and `visibility` are required by the API; a request without them is rejected. Se
 incident types, statuses, roles, and custom fields are all workspace-specific ids — look
 them up in your incident.io workspace.
 
+`POST /v2/alert_events/http/{alert_source_config_id}` (`Alert Events V2#CreateHTTP`), the
+HTTP alert source that incident.io recommends for monitor signals, is implemented too; see
+[HTTP Alert Sources](#http-alert-sources).
+
 ## [Example Usage](../incident-examples/src/main/java/software/sava/incident/examples/IncidentIoExamples.java)
 
 ```java
@@ -201,3 +205,102 @@ provide an explicit key to deduplicate across calls.
 incident.io incidents are resolved by status updates, which this client does not
 support: `supportsResolve()` returns `false` and `resolveIncident(String)` fails the
 returned future with an `UnsupportedOperationException`.
+
+## HTTP Alert Sources
+
+[Example](../incident-examples/src/main/java/software/sava/incident/examples/IncidentIoAlertExamples.java)
+
+incident.io's guidance is that a monitor's signal belongs on an HTTP alert source rather
+than Create Incident: the alert source deduplicates on a key, a `resolved` event with the
+same key resolves the alert, and the workspace's alert routes decide whether and how the
+alert becomes an incident. `IncidentIoAlertEventClient` (package
+`software.sava.incident.io.alert`) sends `AlertEventsCreateHTTPPayloadV2` events to one
+alert source. It authenticates with the alert source's own secret as
+`Authorization: Bearer <token>`, not with an API key.
+
+```java
+final var client = IncidentIoAlertEventClient.clientBuilder()
+    .alertSourceConfigId("ALERT_SOURCE_CONFIG_ID")
+    .token("ALERT_SOURCE_SECRET")
+    .createClient();
+
+final var firing = AlertEvent.build()
+    .title("Disk full on db-1")
+    .status(AlertEvent.Status.firing)
+    .deduplicationKey("db-1-disk")
+    .description("`/var` is at **99%**.")
+    .sourceUrl("https://monitor.example.com/alerts/db-1-disk")
+    .metadata("service", "db")
+    .metadata("team", List.of("storage"))
+    .create();
+client.sendAlertEvent(firing).join();
+
+client.sendAlertEvent(AlertEvent.build()
+    .title("Disk space recovered on db-1")
+    .status(AlertEvent.Status.resolved)
+    .deduplicationKey("db-1-disk")
+    .create()).join();
+```
+
+The endpoint is `https://api.incident.io/v2/alert_events/http/<id>`, the id
+percent-encoded as one path segment; an `endpoint(..)` set on the builder is the full
+request URL instead, and the id is then not needed. `title` and `status` are required.
+A firing event without a deduplication key is given a random UUID, and a resolved event
+without one is refused, since it must carry the key of the alert it resolves.
+`description` is markdown and, with `sourceUrl`, is omitted when blank.
+
+`metadata` is the free-form object the alert source is configured to parse, modelled one
+level deep: strings, booleans, integer types and `BigInteger`, `BigDecimal` (in plain
+notation), finite `Double`/`Float`, null, and collections of those as JSON arrays. Any
+other object is sent as its `toString()`. A map, a Java array, a nested collection and a
+nonfinite number are refused with an `IllegalArgumentException` when added.
+
+A non-2xx response fails the future with `IncidentIoRequestException`, whose
+`retryAfter()` reads a 429's `Retry-After` header or, failing that, the body's
+`rate_limit.retry_after` measured from the response's `Date`. A 2xx body that cannot be
+parsed fails with `IncidentIoParseException`, which is not retried.
+
+### Provider-neutral adapter
+
+`IncidentIoAlertIncidentClient` adapts the alert-source client to `IncidentClient`, under
+provider id `incident.io-alerts`:
+
+```java
+final var incidentClient = client.incidentClientBuilder()
+    .resolveTitle("Recovered")
+    .createClient();
+```
+
+A report sends a firing event: the alert's `summary` is the `title`, its `details` the
+`description`, and its key the `deduplication_key` (a blank key is generated and returned
+in the response). `metadata` carries `severity` (lower case), `source` when not blank,
+`timestamp` in RFC 3339 when set, then every custom detail; a custom detail named like one
+of those three replaces it in place, and one the event would refuse is sent as text. A
+resolve sends a resolved event with the same key, and `supportsResolve()` is `true`.
+
+Two caveats:
+
+- The key and the resolve address the **alert's** lifecycle. Whether an incident is
+  created from the alert, and what happens to it when the alert resolves, depends on the
+  workspace's alert routes, so `supportsResolve()` does not promise that an incident
+  closes.
+- The schema requires a `title` on every event, and neither the schema nor incident.io's
+  documentation says whether a resolve event's title replaces the alert's. A resolve
+  therefore sends `resolveTitle` when one is configured, and the key otherwise.
+
+### Configuration
+
+`IncidentIoAlertSourceConfig` parses `token` (required), `alertSourceConfigId` (required
+unless `endpoint` is set), `resolveTitle`, `endpoint`, and `requestTimeout` from
+`Properties` or JSON:
+
+```properties
+incident.provider=incident.io-alerts
+incident.token=ALERT_SOURCE_SECRET
+incident.alertSourceConfigId=ALERT_SOURCE_CONFIG_ID
+incident.resolveTitle=Recovered
+```
+
+```java
+final IncidentClient incidentClient = IncidentClients.createClient(properties, "incident");
+```

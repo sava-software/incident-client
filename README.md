@@ -8,6 +8,7 @@ Implementation of incident clients for various notification systems.
 |---------------------------------------------------------|----------------------|------------------------------------|
 | [PagerDuty V2 Events API](incident-pagerduty/README.md) | `incident-pagerduty` | `software.sava.incident_pagerduty` |
 | [incident.io Incidents V2](incident-io/README.md)       | `incident-io`        | `software.sava.incident_io`        |
+| [incident.io HTTP Alert Sources](incident-io/README.md#http-alert-sources) | `incident-io` | `software.sava.incident_io` |
 | [Generic Webhook / Slack / Telegram](incident-webhook/README.md) | `incident-webhook` | `software.sava.incident_webhook`  |
 
 All depend on `incident-core` (`software.sava.incident_core`), which provides the
@@ -111,6 +112,37 @@ fields use `customFieldEntries` with a matching `CustomFieldValue` — see the
 `incidentTimestampValues`, and `retrospectiveIncidentOptions` round out
 `IncidentsCreatePayloadV2`.
 
+### incident.io HTTP alert sources
+
+[Full example](incident-examples/src/main/java/software/sava/incident/examples/IncidentIoAlertExamples.java)
+
+An HTTP alert source deduplicates on a key and resolves with the same key; the workspace's
+alert routes decide whether the alert becomes an incident. The client authenticates with
+the alert source's own secret, not an API key.
+
+```java
+final var client = IncidentIoAlertEventClient.clientBuilder()
+    .alertSourceConfigId("ALERT_SOURCE_CONFIG_ID")
+    .token("ALERT_SOURCE_SECRET")
+    .createClient();
+
+client.sendAlertEvent(AlertEvent.build()
+    .title("Disk full on db-1")
+    .status(AlertEvent.Status.firing)
+    .deduplicationKey("db-1-disk")
+    .metadata("service", "db")
+    .create()).join();
+
+client.sendAlertEvent(AlertEvent.build()
+    .title("Disk space recovered on db-1")
+    .status(AlertEvent.Status.resolved)
+    .deduplicationKey("db-1-disk")
+    .create()).join();
+```
+
+See the [module README](incident-io/README.md#http-alert-sources) for the metadata value
+model and the provider-neutral adapter.
+
 ### Generic Webhook / Slack / Telegram
 
 [Full example](incident-examples/src/main/java/software/sava/incident/examples/WebhookExamples.java)
@@ -148,6 +180,13 @@ incident.provider=incident.io
 incident.bearerToken=BEARER_TOKEN
 incident.visibility=private
 incident.severityIds.CRITICAL=SEVERITY_ID
+```
+
+```properties
+incident.provider=incident.io-alerts
+incident.token=ALERT_SOURCE_SECRET
+incident.alertSourceConfigId=ALERT_SOURCE_CONFIG_ID
+incident.resolveTitle=Recovered
 ```
 
 ```java
@@ -210,3 +249,12 @@ incident.io custom fields are workspace schema objects rather than an arbitrary
 key/value map. Provider-specific features — PagerDuty links,
 images, and change events; incident.io custom fields and role assignments — remain on the
 provider clients.
+
+The incident.io alert-source adapter (`incident.io-alerts`) sends a firing event keyed by
+the alert's key, with severity, source, timestamp and custom details in its `metadata`,
+and resolves by sending a resolved event with the same key. That resolve addresses the
+alert's lifecycle: whether an incident is created from the alert, and whether it closes
+when the alert resolves, depends on the workspace's alert routes, so `supportsResolve()`
+does not promise that an incident closes. Every event needs a `title`, and nothing
+upstream says whether a resolve event's title replaces the alert's, so a resolve sends the
+configured `resolveTitle`, or the key when none is set.

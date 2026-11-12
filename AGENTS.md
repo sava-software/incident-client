@@ -19,7 +19,9 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   config parsing (`HttpApiClientConfig`), `JsonUtil` (JSON string escaping), `Rfc3339`
   (timestamp formatting), and the provider-neutral `api` package (below).
 - `incident-io/` — [incident.io](https://incident.io) API client: create-incident request
-  serialization, response parsing, typed error-envelope exceptions.
+  serialization, response parsing, typed error-envelope exceptions; and, in
+  `software.sava.incident.io.alert`, an HTTP alert-source client (`AlertEvent` firing and
+  resolved events keyed by `deduplication_key`, provider id `incident.io-alerts`).
 - `incident-pagerduty/` — PagerDuty **Events API v2** client (`/v2/enqueue`,
   `/v2/change/enqueue`): trigger/acknowledge/resolve alert events and change events.
 - `incident-webhook/` — generic webhook POSTer: one shared transport/config/exception
@@ -52,9 +54,12 @@ provider can be swapped via configuration:
 
 Adapters: `PagerDutyIncidentClient` (dedup-key based, `details` carried in
 `custom_details`), `IncidentIoIncidentClient` (workspace-specific severity/type/status
-ids are supplied at build time; resolve unsupported), and `WebhookIncidentClient`
-(renders the alert with a `WebhookFormat`; resolve unsupported). When extending the
-common model, update every adapter (and the webhook formats) and their mapping tests.
+ids are supplied at build time; resolve unsupported), `IncidentIoAlertIncidentClient`
+(alert-source events keyed by `deduplication_key`, severity/source/timestamp and custom
+details carried in `metadata`; resolve supported, for the alert's lifecycle), and
+`WebhookIncidentClient` (renders the alert with a `WebhookFormat`; resolve unsupported).
+When extending the common model, update every adapter (and the webhook formats) and their
+mapping tests.
 
 ## Canonical API references
 
@@ -66,7 +71,10 @@ truth. Verify against them, not against this repo's existing output:
   (payload fields, severity enum, required fields, response shapes).
 - **incident.io** — the Go SDK (`https://github.com/incident-io/sdk-go`)
   bundles the full current contract as `openapi3.json`; `IncidentsCreatePayloadV2` /
-  `IncidentV2` are the schemas for `incident-io` request/response fields.
+  `IncidentV2` are the schemas for `incident-io` request/response fields, and
+  `AlertEventsCreateHTTPPayloadV2` / `AlertEventsCreateHTTPResultV2` (operation
+  `Alert Events V2#CreateHTTP`, `POST /v2/alert_events/http/{alert_source_config_id}`)
+  for the alert-source client.
   `https://docs.incident.io/api-reference` (Create Incident V2) is the prose companion.
 
 Clone reference repos outside this repository (or in a git-ignored location), record the
@@ -106,13 +114,13 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
                                                  #   :incident-pagerduty:pitestPayload|pitestResponse|pitestConfig|pitestAdapter
                                                  #   :incident-webhook:pitestFormat|pitestConfig|pitestAdapter
 ./gradlew :<module>:fuzz<Target>                 # Jazzer fuzzing:
-                                                 #   :incident-io:fuzzRequest|fuzzResponse
+                                                 #   :incident-io:fuzzRequest|fuzzResponse|fuzzAlertEvent|fuzzAlertEventResponse
                                                  #   :incident-pagerduty:fuzzPayload
                                                  #   :incident-webhook:fuzzFormat
 ./gradlew :<module>:hardeningHelp                # installed-version authority; run it
 ```
 
-Those fifteen suites and four fuzz targets are this repo's inventory, declared in each
+Those fifteen suites and six fuzz targets are this repo's inventory, declared in each
 module's `build.gradle.kts` under the `hardening` extension (from sava-build's
 `software.sava.build.feature.hardening` plugin). Everything else about the tooling — what
 each writer task does, which properties exist, which have been refused — comes from
@@ -150,13 +158,15 @@ Conventions to preserve:
   seed corpora live under `src/test/resources/fuzz/<target>/`.
 - Every fuzz target here declares a `seedCorpus`. A corpus does two independent jobs:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
-  and *regression* (a committed landing place for findings — the `request`, `payload` and
-  `format` corpora; measured to change no mutation score). "The mutator reaches this
-  format from scratch" answers only the bootstrap question. All four targets here
-  declare one; if a future target genuinely does neither job, take the decline property
-  from `:<module>:hardeningHelp`, and record the measurement
-  that justified it the way an acceptance is argued. Seed
-  provenance goes in a README next to — never inside — the corpus dir.
+  and *regression* (a committed landing place for findings — the `request`, `alertEvent`,
+  `alertEventResponse`, `payload` and `format` corpora; the `request`, `payload` and
+  `format` corpora were measured to change no mutation score, and the `alertEvent` and
+  `alertEventResponse` corpora have not been measured). "The mutator reaches this format
+  from scratch" answers only the bootstrap question. All six targets here declare one; if
+  a future target genuinely does neither job, take the decline property from
+  `:<module>:hardeningHelp`, and record the measurement that justified it the way an
+  acceptance is argued. Seed provenance goes in a README next to — never inside — the
+  corpus dir.
 - Our copy-on-write builder acceptances (`# copy-on-write` / `# defensive-copy` in
   `api-accepted.csv` and `payload-accepted.csv`) argue only the content-equal sibling of
   each `size() > 1 ? copy : as-is` ternary; the mutable-escape direction is killed by the

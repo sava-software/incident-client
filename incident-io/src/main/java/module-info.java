@@ -7,9 +7,11 @@ module software.sava.incident_io {
   requires transitive software.sava.incident_core;
 
   exports software.sava.incident.io;
+  exports software.sava.incident.io.alert;
   exports software.sava.incident.io.config;
   exports software.sava.incident.io.exceptions;
 
   provides software.sava.incident.core.api.IncidentClientFactory with
-      software.sava.incident.io.IncidentIoIncidentClientFactory;
+      software.sava.incident.io.IncidentIoIncidentClientFactory,
+      software.sava.incident.io.alert.IncidentIoAlertIncidentClientFactory;
 }
