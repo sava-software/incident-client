@@ -59,10 +59,10 @@ truth. Verify against them, not against this repo's existing output:
 - **PagerDuty** — `https://github.com/PagerDuty/api-schema`;
   `reference/events-v2/openapiv3.json` is the contract for `incident-pagerduty`
   (payload fields, severity enum, required fields, response shapes).
-- **incident.io** — the Go SDK (`https://github.com/incident-io/incident-io-go`)
+- **incident.io** — the Go SDK (`https://github.com/incident-io/sdk-go`)
   bundles the full current contract as `openapi3.json`; `IncidentsCreatePayloadV2` /
   `IncidentV2` are the schemas for `incident-io` request/response fields.
-  `https://api-docs.incident.io` (Create Incident V2) is the prose companion.
+  `https://docs.incident.io/api-reference` (Create Incident V2) is the prose companion.
 
 Clone reference repos outside this repository (or in a git-ignored location), record the
 paths in `AGENTS.local.md`, and `git pull` an existing clone before comparing.
