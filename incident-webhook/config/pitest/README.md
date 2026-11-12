@@ -32,20 +32,26 @@ grouped by the principle that makes it equivalent.
   arms in the empty-body reads — `new String(byte[0])` is already `""`, so the
   length check was a content-equal branch); 3 accepted below (plus 1 in
   `config`). The Telegram expansion (2026-07-26) added one accepted `format`
-  row (truncation boundary) and killed its factory's blank-chat-id direction
-  by pinning the factory's error message against the record's own validation.
+  row (truncation boundary, retired 2026-11-12: see `# boundary-identity`
+  below) and killed its factory's blank-chat-id direction by pinning the
+  factory's error message against the record's own validation.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
 Group by the principle that makes them equivalent (see the recurring families
 in HARDENING.md); the baseline CSVs carry the exact keys.
 
-- `# boundary-identity` (format: `TelegramTextFormat.render`,
-  `ConditionalsBoundaryMutator`) — the `text.length() > MAX_TEXT_LENGTH`
-  truncation guard: the `>=` boundary mutant differs only for text of exactly
-  the limit length, where `substring(0, MAX_TEXT_LENGTH)` returns identical
-  content — both branches produce the same string, so no input can distinguish
-  them. The at-limit and over-limit behaviours are pinned by exact-output tests.
+- `# boundary-identity` — retired 2026-11-12; no row carries it, and the
+  `format` baseline is empty. It argued the `>=` mutant of
+  `TelegramTextFormat.render`'s `text.length() > MAX_TEXT_LENGTH` guard: at
+  exactly the limit `substring(0, MAX_TEXT_LENGTH)` returned the same string,
+  so no input could tell the branches apart. The truncation branch now moves
+  the cut back from a high surrogate, so text of exactly the limit that ends
+  in one is sent whole by `>` and cut by `>=`;
+  `TelegramTextFormatTests#textOfExactlyTheLimitIsSentAsItIsWhateverItsLastChar`
+  kills it. The row was dropped with `pitestFormatBaselinePrune` after two
+  matching fresh history-free previews and the write-boundary run. An unkilled
+  mutant in `render` is new debt, not this family.
 - `# always-true-delegate` (config: `WebhookConfig$Parser.test`,
   `BooleanTrueReturnValsMutator`) — the `return super.test(...)` delegation,
   where the superclass either returns true or throws on unknown fields; the

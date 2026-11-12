@@ -59,6 +59,21 @@ grouped by the principle that makes it equivalent.
   `:incident-pagerduty:hardeningHelp` for how the installed plugin treats a report
   carrying one.
 
+  A second of the same kind, 2026-11-12, with the machine's load average near 70 from
+  unrelated work: the `pitestAdapterBaselineRetag` observation reported one `TIMED_OUT`,
+  `PagerDutyEventClientImpl.triggerEvent` (`RemoveConditionalMutator_EQUAL_ELSE`, the
+  `clientUrl` ternary), and the next invocation was refused because
+  `ClientTestRunner`, the `jdk.httpserver` wire harness that covers that method, failed
+  once without mutation. The gate run before them and the solo history-free run after
+  them both killed the mutant, and the wire test passed three times in a row outside
+  PIT, so no timeout record was written. The range under the gate changed neither the
+  method nor the test, but commits earlier that day had: `e4001e9` (the builder hand-off
+  in `triggerEvent`) and `2bcddcd` (the body-size check in `postEvent`) in the client,
+  and `baa8e9a` (the removed `authToken`) in `EventClientTests`, the harness's first
+  dynamic test. The gate that followed those commits ran this suite without a timeout.
+  A repeat on a quiet machine is a finding about that harness's timing or about those
+  changes, not noise.
+
 ## Triaged equivalent mutants (accepted with reasons)
 
 Group by the principle that makes them equivalent (see the recurring families
