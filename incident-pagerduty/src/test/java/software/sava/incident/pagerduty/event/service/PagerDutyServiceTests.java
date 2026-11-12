@@ -11,6 +11,7 @@ import software.sava.incident.pagerduty.event.data.PagerDutyEventPayload;
 import software.sava.incident.pagerduty.event.data.PagerDutyEventResponse;
 import software.sava.incident.pagerduty.event.data.PagerDutySeverity;
 import software.sava.incident.pagerduty.exceptions.PagerDutyClientException;
+import software.sava.incident.pagerduty.exceptions.PagerDutyParseException;
 
 import javax.net.ssl.SSLSession;
 import java.io.IOException;
@@ -784,6 +785,44 @@ final class PagerDutyServiceTests {
       assertEquals(2, bodies.size(), "one failed attempt, one retry");
       assertEquals(bodies.get(0), bodies.get(1));
       assertNotNull(builder.timestamp(), "the caller's builder itself was created");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /// A 2xx means PagerDuty accepted the event, and a change event carries no dedup key, so a
+  /// retry after an accepted change event whose body the client cannot parse would post the
+  /// change twice. A stubbed client could not show this: the parse failure only exists in the
+  /// real client's response handling, so this drives one over a `jdk.httpserver` that answers
+  /// every request with a 202 and a non-JSON body, with retries allowed and no delays.
+  @Test
+  void anAcceptedChangeEventWithAnUnparseableBodyIsNotRetried() throws IOException {
+    final var requests = new AtomicInteger();
+    final var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/", exchange -> {
+      try (exchange) {
+        requests.incrementAndGet();
+        exchange.getRequestBody().readAllBytes();
+        final var bytes = "accepted, not json".getBytes(UTF_8);
+        exchange.sendResponseHeaders(202, bytes.length);
+        exchange.getResponseBody().write(bytes);
+      }
+    });
+    server.setExecutor(ForkJoinPool.commonPool());
+    server.start();
+    try {
+      final var address = server.getAddress();
+      final var client = PagerDutyEventClient.clientBuilder()
+          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .defaultRoutingKey("change-rk")
+          .createClient();
+      final var future = PagerDutyService.build().client(client).eventPrototype(EVENT).create()
+          .changeEvent(CHANGE, 3, 0, 0, TimeUnit.MILLISECONDS);
+      final var thrown = assertThrows(CompletionException.class, future::join);
+      final var parseException = assertInstanceOf(PagerDutyParseException.class, thrown.getCause());
+      assertFalse(parseException.canBeRetried());
+      assertEquals("Failed to adapt 202 response: 'accepted, not json'", parseException.getMessage());
+      assertEquals(1, requests.get(), "an accepted change event is posted once");
     } finally {
       server.stop(0);
     }

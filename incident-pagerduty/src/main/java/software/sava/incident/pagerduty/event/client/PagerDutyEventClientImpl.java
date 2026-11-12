@@ -80,8 +80,20 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     if (code < 200 || code >= 300) {
       throw errorResponse(httpResponse);
     } else {
-      final var ji = JsonIterator.parse(readBody(httpResponse));
-      return PagerDutyEventResponse.parser().parse(ji).create();
+      // a 2xx means the event was accepted, so a body this parser cannot read (a bad gzip
+      // encoding: reported with empty text) or cannot parse must not surface as a transport
+      // failure, which the retry wrappers would send again; a caller-set testResponse makes
+      // the transport read the body before this parser runs, outside this guard
+      byte[] body = null;
+      try {
+        body = readBody(httpResponse);
+        return PagerDutyEventResponse.parser().parse(JsonIterator.parse(body)).create();
+      } catch (final RuntimeException parseCause) {
+        throw new PagerDutyParseException(httpResponse,
+            String.format("Failed to adapt %d response: '%s'", code, body == null ? "" : new String(body)),
+            parseCause
+        );
+      }
     }
   };
 
