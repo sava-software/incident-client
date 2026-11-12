@@ -85,7 +85,8 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
   (255 for PagerDuty, none for incident.io and the webhook formats) through
   `IncidentClient.boundKey`, the same way on every report and resolve: the key's first
   characters, a colon and the SHA-256 of the whole key, within the limit in characters as
-  Java counts them (never fewer than the Unicode characters PagerDuty's 255 counts).
+  Java counts them (never fewer than the Unicode characters PagerDuty's 255 counts); a
+  request body over 512 KiB (524,288 UTF-8 bytes) is refused before sending.
 - Optional fields are omitted when null/blank — never serialized as `"null"` or `""`.
 - Response parsing contract: unknown fields are skipped; malformed input fails with a
   `RuntimeException`, never anything else (the fuzz targets enforce this).

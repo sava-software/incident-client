@@ -10,6 +10,19 @@ import java.util.concurrent.CompletableFuture;
 
 public interface PagerDutyEventClient extends HttpApiClient {
 
+  /// The largest request body, in UTF-8 bytes, this client posts: `512 * 1024` = 524,288.
+  ///
+  /// PagerDuty documents that "Events API payloads are limited to 512 KB"
+  /// (https://docs.pagerduty.com/developer/events-api-v2-overview, Size Limits); the OpenAPI
+  /// contract states no bound. The page says neither which multiplier "KB" means nor whether
+  /// the whole request body or only its `payload` member is measured. This is the larger
+  /// reading of "512 KB", and the client measures the whole body it posts (trigger,
+  /// acknowledge, resolve and change events alike), so near the limit it may refuse an event
+  /// the server would have accepted. A body over the limit is refused with an
+  /// [IllegalArgumentException], synchronously, before any request is made; nothing is
+  /// trimmed.
+  int MAX_REQUEST_BODY_BYTES = 512 * 1024;
+
   static Builder clientBuilder() {
     return new Builder();
   }
@@ -65,6 +78,8 @@ public interface PagerDutyEventClient extends HttpApiClient {
   ///                                  `routingKey` or `payload` is null
   /// @throws RuntimeException         synchronously, before anything is sent, whatever the
   ///                                  builder's `create()` throws
+  /// @throws IllegalArgumentException synchronously, before anything is sent, if the request
+  ///                                  body is over [#MAX_REQUEST_BODY_BYTES]
   CompletableFuture<PagerDutyEventResponse> triggerEvent(final String clientName,
                                                          final String clientUrl,
                                                          final String routingKey,
@@ -92,6 +107,8 @@ public interface PagerDutyEventClient extends HttpApiClient {
   ///                              or `payload` is null
   /// @throws RuntimeException     synchronously, before anything is sent, whatever the
   ///                              builder's `create()` throws
+  /// @throws IllegalArgumentException synchronously, before anything is sent, if the request
+  ///                              body is over [#MAX_REQUEST_BODY_BYTES]
   CompletableFuture<PagerDutyEventResponse> changeEvent(final String routingKey,
                                                         final PagerDutyChangeEventPayload payload);
 

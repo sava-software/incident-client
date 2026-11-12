@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -135,6 +136,14 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
   }
 
   private CompletableFuture<PagerDutyEventResponse> postEvent(final URI uri, final String jsonBody) {
+    // measured in the encoding the transport sends: String.length() undercounts multi-byte text
+    final int bodyBytes = jsonBody.getBytes(StandardCharsets.UTF_8).length;
+    if (bodyBytes > MAX_REQUEST_BODY_BYTES) {
+      throw new IllegalArgumentException(String.format(
+          "PagerDuty Events API request body is %d bytes, over the %d-byte limit.",
+          bodyBytes, MAX_REQUEST_BODY_BYTES
+      ));
+    }
     return sendPostRequest(uri, RESPONSE_PARSER, jsonBody);
   }
 

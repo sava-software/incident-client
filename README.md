@@ -63,6 +63,10 @@ final var resolveResponse = client.resolveEvent(triggerResponse.dedupKey()).join
 final var changeEventResponse = changeEventResponseFuture.join();
 ```
 
+PagerDuty limits Events API payloads to 512 KB, so the client refuses any request body over
+`PagerDutyEventClient.MAX_REQUEST_BODY_BYTES` (524,288 UTF-8 bytes) with an
+`IllegalArgumentException` before sending it.
+
 ### incident.io
 
 [Full example](incident-examples/src/main/java/software/sava/incident/examples/IncidentIoExamples.java)
