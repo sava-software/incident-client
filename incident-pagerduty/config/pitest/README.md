@@ -58,47 +58,92 @@ grouped by the principle that makes it equivalent.
   because this repo investigates a repeat rather than re-running it away; consult
   `:incident-pagerduty:hardeningHelp` for how the installed plugin treats a report
   carrying one.
-- **Open, `adapter`: one `TIMED_OUT` whose cause is not classified.** On 2026-11-12 a
-  single observation reported `TIMED_OUT` for the `clientUrl` ternary of the trigger body,
-  then in `PagerDutyEventClientImpl.triggerEvent` (`RemoveConditionalMutator_EQUAL_ELSE`),
-  with the load average near 70 on 10 cores.
-  - Established: the mutated code is a straight-line expression with no loop, wait, lock
-    or external completion, so it has no liveness mechanism; and the test that killed it
-    in every report that names one was the socket-based wire harness (`ClientTestRunner`
-    over `EventClientEdgeCaseTests`, a real `HttpClient` against `jdk.httpserver`).
-  - Not established: why the watchdog fired. No specific covering-path race was
-    demonstrated, so this is not `cause:harness`, and the kills observed before and after
-    it do not explain it. The condition that produced it has not been observed again: the
-    fresh history-free observations taken since (two full gates and two solo runs on
-    2026-11-13, load averages between 6 and 27) are not that condition.
-  - Done: the body's rendering moved to `PagerDutyEventClientImpl.triggerJson`, where
-    `TriggerJsonTests` kills that mutant and its three siblings without a socket; all
-    four of those reports name it as their killing test. The socket tests still cover
-    those mutants through `triggerEvent`; which test PIT runs first is its ordering, not
-    something this repository fixes. The coordinate was refactored before its cause could
-    be classified.
+
+  Load is not the only thing that produces such an outcome. PIT 1.30.2's control channel
+  is open to the port capture described under the open items below: its main process
+  binds port 0 on the wildcard address (`SocketFinder`), and each minion connects to
+  `localhost` and gives up after a read timeout of 10 seconds (coverage) or 20 (mutation).
+  Reduced to those two calls and run against one held loopback port, the minion's read
+  timed out and the main process never saw a connection. On 2026-11-14 the `response`
+  suite's coverage minion died with exactly that read timeout, ten seconds after it
+  started, at a load average under 14; the next history-free gate was clean. Which port
+  that run had was not recorded, so this too is a fit and not a capture. Nothing in this
+  repository can change PIT's sockets.
+- **Open until reviewed, `adapter`: one `TIMED_OUT`, with a demonstrated mechanism that
+  fits it.** On 2026-11-12 a single observation reported `TIMED_OUT` for the `clientUrl`
+  ternary of the trigger body, then in `PagerDutyEventClientImpl.triggerEvent`
+  (`RemoveConditionalMutator_EQUAL_ELSE`), with the load average near 70 on 10 cores.
+  - Mechanism, demonstrated 2026-11-13 on this machine (macOS, with
+    `net.inet.tcp.randomize_ports` at 0, so ephemeral ports come in sequence): the wire
+    harness `ClientTests` bound its server to the wildcard address, the only test server
+    in this repository that did, and its client connected to `127.0.0.1`. macOS can give
+    a wildcard bind of port 0 a port that another process's loopback listener already
+    holds, and a connection to `127.0.0.1` then reaches that listener instead of the
+    harness. With one loopback listener holding the port the harness was about to be
+    given, `EventClientTests` failed on the client's 8-second request timeout when the
+    listener stayed silent, and on a connection reset in a fraction of a second when the
+    listener closed the connection. The first outlasts PIT's watchdog for that test at
+    every load observed here: PIT allows 1.25 times the test's coverage-phase time plus 4
+    seconds, and that test never took more than a few hundred milliseconds. Producing the
+    stall needs no machine load.
+  - Attribution to the 2026-11-12 observation is inferred, not captured: nothing kept
+    from that run shows which port its server had, and that run named no covering test.
+    What fits: the mutated code is a straight-line expression with no loop, wait or lock,
+    and the test that killed that mutant in every report that names one ran through the
+    harness. The rate is plausible and no more: 29 loopback listeners were counted in the
+    ephemeral range on 2026-11-13, and the harness ran 16 times in one adapter-suite run,
+    14 of them in the mutation phase, about one chance in 40 of a capture there per run,
+    before asking whether the listener stays silent. Those counts were taken after the
+    body's rendering moved to `triggerJson`; neither the harness's run count nor the
+    listener count on 2026-11-12 was measured. What part load played is not known: on
+    2026-11-13 the unchanged harness ran through two gates and two solo runs at load
+    averages between 6 and 27 with no `TIMED_OUT`, though by then `TriggerJsonTests`, not
+    the harness, killed that mutant. Neither a capture nor load is excluded.
+  - Removed: the harness binds the loopback address, as every other wire test here does,
+    and builds its client's endpoint from the bound address. `ClientTestRunner` asserts
+    the loopback bind, that the harness's client targets the bound address, and the
+    endpoint's literal form. A second loopback bind of a held port is refused, and a
+    loopback listener takes `127.0.0.1` connections ahead of a wildcard one. Against the
+    same held port the harness is now given another port, and the test passes.
+  - Also done: the body's rendering moved to `PagerDutyEventClientImpl.triggerJson`, which
+    `TriggerJsonTests` pins without a socket.
+  - Not covered by either change: a socket test slowed past the watchdog by load alone.
+    That has not been demonstrated here, and the 2026-11-12 observation does not exclude
+    it. Every wire test in this module still opens a loopback socket, so a `TIMED_OUT`
+    at a mutant one of them covers is a new finding: classify it from that run's report
+    and its Gradle daemon log (`:incident-pagerduty:pitestAdapterDiagnostic` gives
+    verbose output, which is diagnosis and not mutation evidence). A later kill does not
+    close it.
   - No `adapter-timeouts.csv` row exists: the mutant is finite, and sava-build's
     HARDENING.md has such a mutant kept "out of the audited set while its contract-first
     repair or acceptance is completed" instead of a `cause:untriaged` draft row being
     committed.
-  - Still exposed: the line-less key
-    `PagerDutyEventClientImpl,triggerEvent,RemoveConditionalMutator_EQUAL_ELSE` keeps one
-    member, the `payload instanceof Builder` hand-off, which those reports show
-    `PagerDutyEventClientHandoffTests` killing, and that class starts a `jdk.httpserver`
-    in every test. A `TIMED_OUT` at any mutant a socket test covers, the `triggerJson`
-    ternaries included, reopens this item: classify it from that run's report and its
-    Gradle daemon log. `:incident-pagerduty:pitestAdapterDiagnostic` gives verbose
-    output, which is diagnosis and not mutation evidence. A later kill does not close it.
-- **Open, `adapter`: one unmutated failure of the wire harness.** In the invocation that
-  followed that observation PIT refused to run because `ClientTestRunner`'s first dynamic
-  test (`EventClientTests`) failed without mutation, with the load average near 65. PIT's
-  verbose logging was off, so the cause was not captured, and the test passing three
-  times outside PIT straight afterwards does not explain it. The client and that test had
-  both changed earlier the same day: `e4001e9` (the builder hand-off) and `2bcddcd` (the
-  body-size check) on the request path, `f6e3812` (the 2xx response parser, which every
-  call of that test takes), and `baa8e9a` (the removed `authToken`) in the test itself. A
-  repeat is diagnosed from that run's Gradle daemon log and the diagnostic task above,
-  not re-run away.
+  - For review: whether this attribution is accepted. The removal itself is checked by
+    the tests above and by a history-free module gate on the changed harness, which
+    showed no `TIMED_OUT` and no unmutated failure at a load average near 56.
+- **Open until reviewed, `adapter`: one unmutated failure of the wire harness.** In the
+  invocation that followed that observation, with the load average near 65, PIT refused
+  to run because `ClientTestRunner`'s first dynamic test (`EventClientTests`) failed
+  without mutation, about two seconds after the minion received its tests. PIT's verbose
+  logging was off, and the Gradle daemon logs of both runs hold no cause.
+  - The same mechanism can produce it: a captured connection that the other listener
+    closes fails that test at once, where a request timeout would have taken eight
+    seconds.
+  - The rate does not favour it. This failure needs a capture at one bind, the first of
+    the coverage phase: about one chance in 565 at the listener count above, which makes
+    the attribution weak. The listener count on 2026-11-12 is not known.
+  - Not excluded: the client and that test had both changed earlier the same day
+    (`e4001e9`, the builder hand-off, and `2bcddcd`, the body-size check, on the request
+    path; `f6e3812`, the 2xx response parser; `baa8e9a`, the removed `authToken`, in the
+    test). The test passed three times outside PIT straight afterwards and has passed in
+    every run since.
+  - The cause is not established. The harness change removes the one mechanism that was
+    demonstrated; a repeat is a new finding, diagnosed from that run's daemon log and the
+    diagnostic task above, not re-run away.
+  - A wrong-reason failure of this kind during the mutation phase would have been
+    recorded as a kill. A history-free gate on the changed harness detects the same
+    mutants as the run before the change, so none of the current kills depends on a
+    capture; whether an earlier run recorded one cannot be told from its statuses.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
