@@ -179,10 +179,28 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     // a builder is created in place, never copied: it keeps the generated dedup key and
     // defaulted timestamp, so every hand-off of it (each service retry) sends the same event
     final var event = payload instanceof PagerDutyEventPayload.Builder builder ? builder.create() : payload;
+    return postEvent(eventUri, triggerJson(routingKey, event, clientName, clientUrl));
+  }
+
+  /// The trigger event's request body, as [#triggerEvent] sends it: the routing key, the
+  /// event's dedup key and payload, then `client` and `client_url` (each omitted when null
+  /// or blank), then the event's images and links. Every caller-supplied string is
+  /// JSON-escaped. Package-private and free of I/O so the rendering is tested without a
+  /// transport.
+  ///
+  /// @param routingKey the integration's routing key
+  /// @param event      a created payload: a builder is the caller's to create first
+  /// @param clientName the `client` field, or null or blank for none
+  /// @param clientUrl  the `client_url` field, or null or blank for none
+  /// @return the JSON request body
+  static String triggerJson(final String routingKey,
+                            final PagerDutyEventPayload event,
+                            final String clientName,
+                            final String clientUrl) {
     final var payloadJson = event.payloadJson();
     final var linksJson = event.linksJson();
     final var imagesJson = event.imagesJson();
-    final var json = String.format("""
+    return String.format("""
             {"event_action":"trigger","routing_key":"%s","dedup_key":"%s","payload":%s%s%s%s%s}""",
         escapeJson(routingKey), escapeJson(event.dedupKey()), payloadJson,
         (clientName == null || clientName.isBlank() ? "" : String.format("""
@@ -191,7 +209,6 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
             ,"client_url":"%s\"""", escapeJson(clientUrl))),
         imagesJson, linksJson
     );
-    return postEvent(eventUri, json);
   }
 
   @Override
