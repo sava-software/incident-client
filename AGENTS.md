@@ -184,6 +184,16 @@ Conventions to preserve:
   property from `:<module>:hardeningHelp`, and record the measurement that justified it the way an
   acceptance is argued. Seed provenance goes in a README next to — never inside — the
   corpus dir.
+- Wire tests bind their `jdk.httpserver` to the loopback address
+  (`InetAddress.getLoopbackAddress()`, port 0), never the wildcard address, and take the
+  client's endpoint from the server's bound address. macOS can give a wildcard bind of
+  port 0 a port that another process's loopback listener already holds, and a connection
+  to `127.0.0.1` then reaches that listener: the test fails at once, or waits out the
+  client's request timeout, which PIT reports as `TIMED_OUT`. A loopback bind cannot be
+  captured that way. The PagerDuty harness builds the endpoint with `ClientTests.endpoint`,
+  which brackets an IPv6 literal; the other wire tests concatenate `getHostString()`, which
+  is right for the default IPv4 loopback and fails, loudly, when the JVM is told to prefer
+  IPv6.
 - Our copy-on-write builder acceptances (`# copy-on-write` / `# defensive-copy` in
   `api-accepted.csv` and `payload-accepted.csv`) argue only the content-equal sibling of
   each `size() > 1 ? copy : as-is` ternary; the mutable-escape direction is killed by the

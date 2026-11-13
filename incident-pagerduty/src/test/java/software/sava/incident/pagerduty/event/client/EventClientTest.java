@@ -5,12 +5,14 @@ import com.sun.net.httpserver.HttpServer;
 public interface EventClientTest extends ClientTest {
 
   default void test(final HttpServer httpServer) {
-    final int port = httpServer.getAddress().getPort();
+    final var address = httpServer.getAddress();
+    final int port = address.getPort();
     final var client = PagerDutyEventClient.clientBuilder()
         .defaultClientName("test-" + port)
-        // 127.0.0.1, never localhost: a ::1 resolution can reach another JVM's
-        // wildcard bind on the same port number under parallel module runs
-        .endpoint("http://127.0.0.1:" + port)
+        // the address the server is bound to, as a literal: never localhost, which can
+        // resolve to another address family and reach another process's listener on the
+        // same port number
+        .endpoint(ClientTests.endpoint(address))
         .defaultRoutingKey("routing-key-" + port)
         .createClient();
     test(client);
