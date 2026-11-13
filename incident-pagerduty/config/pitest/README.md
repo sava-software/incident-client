@@ -58,21 +58,47 @@ grouped by the principle that makes it equivalent.
   because this repo investigates a repeat rather than re-running it away; consult
   `:incident-pagerduty:hardeningHelp` for how the installed plugin treats a report
   carrying one.
-
-  A second of the same kind, 2026-11-12, with the machine's load average near 70 from
-  unrelated work: the `pitestAdapterBaselineRetag` observation reported one `TIMED_OUT`,
-  `PagerDutyEventClientImpl.triggerEvent` (`RemoveConditionalMutator_EQUAL_ELSE`, the
-  `clientUrl` ternary), and the next invocation was refused because
-  `ClientTestRunner`, the `jdk.httpserver` wire harness that covers that method, failed
-  once without mutation. The gate run before them and the solo history-free run after
-  them both killed the mutant, and the wire test passed three times in a row outside
-  PIT, so no timeout record was written. The range under the gate changed neither the
-  method nor the test, but commits earlier that day had: `e4001e9` (the builder hand-off
-  in `triggerEvent`) and `2bcddcd` (the body-size check in `postEvent`) in the client,
-  and `baa8e9a` (the removed `authToken`) in `EventClientTests`, the harness's first
-  dynamic test. The gate that followed those commits ran this suite without a timeout.
-  A repeat on a quiet machine is a finding about that harness's timing or about those
-  changes, not noise.
+- **Open, `adapter`: one `TIMED_OUT` whose cause is not classified.** On 2026-11-12 a
+  single observation reported `TIMED_OUT` for the `clientUrl` ternary of the trigger body,
+  then in `PagerDutyEventClientImpl.triggerEvent` (`RemoveConditionalMutator_EQUAL_ELSE`),
+  with the load average near 70 on 10 cores.
+  - Established: the mutated code is a straight-line expression with no loop, wait, lock
+    or external completion, so it has no liveness mechanism; and the test that killed it
+    in every report that names one was the socket-based wire harness (`ClientTestRunner`
+    over `EventClientEdgeCaseTests`, a real `HttpClient` against `jdk.httpserver`).
+  - Not established: why the watchdog fired. No specific covering-path race was
+    demonstrated, so this is not `cause:harness`, and the kills observed before and after
+    it do not explain it. The condition that produced it has not been observed again: the
+    fresh history-free observations taken since (two full gates and two solo runs on
+    2026-11-13, load averages between 6 and 27) are not that condition.
+  - Done: the body's rendering moved to `PagerDutyEventClientImpl.triggerJson`, where
+    `TriggerJsonTests` kills that mutant and its three siblings without a socket; all
+    four of those reports name it as their killing test. The socket tests still cover
+    those mutants through `triggerEvent`; which test PIT runs first is its ordering, not
+    something this repository fixes. The coordinate was refactored before its cause could
+    be classified.
+  - No `adapter-timeouts.csv` row exists: the mutant is finite, and sava-build's
+    HARDENING.md has such a mutant kept "out of the audited set while its contract-first
+    repair or acceptance is completed" instead of a `cause:untriaged` draft row being
+    committed.
+  - Still exposed: the line-less key
+    `PagerDutyEventClientImpl,triggerEvent,RemoveConditionalMutator_EQUAL_ELSE` keeps one
+    member, the `payload instanceof Builder` hand-off, which those reports show
+    `PagerDutyEventClientHandoffTests` killing, and that class starts a `jdk.httpserver`
+    in every test. A `TIMED_OUT` at any mutant a socket test covers, the `triggerJson`
+    ternaries included, reopens this item: classify it from that run's report and its
+    Gradle daemon log. `:incident-pagerduty:pitestAdapterDiagnostic` gives verbose
+    output, which is diagnosis and not mutation evidence. A later kill does not close it.
+- **Open, `adapter`: one unmutated failure of the wire harness.** In the invocation that
+  followed that observation PIT refused to run because `ClientTestRunner`'s first dynamic
+  test (`EventClientTests`) failed without mutation, with the load average near 65. PIT's
+  verbose logging was off, so the cause was not captured, and the test passing three
+  times outside PIT straight afterwards does not explain it. The client and that test had
+  both changed earlier the same day: `e4001e9` (the builder hand-off) and `2bcddcd` (the
+  body-size check) on the request path, `f6e3812` (the 2xx response parser, which every
+  call of that test takes), and `baa8e9a` (the removed `authToken`) in the test itself. A
+  repeat is diagnosed from that run's Gradle daemon log and the diagnostic task above,
+  not re-run away.
 
 ## Triaged equivalent mutants (accepted with reasons)
 
