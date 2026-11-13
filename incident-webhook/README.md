@@ -30,15 +30,17 @@ may read the wait a failed response's body asks for.
   workflow webhooks that accept arbitrary JSON can also consume `GENERIC_JSON`.
 
 - `TelegramTextFormat` (provider id `telegram`) — a Telegram Bot API `sendMessage` body,
-  `{"chat_id":"...","text":"..."}`, sharing the Slack format's plain-text rendering
-  (minus the entity escaping — no `parse_mode` is sent, so no Telegram markup escaping
-  applies). The endpoint is the bot's full `sendMessage` URL,
+  `{"chat_id":"...","text":"...","link_preview_options":{"is_disabled":true}}`, sharing
+  the Slack format's plain-text rendering (minus the entity escaping — no `parse_mode` is
+  sent, so no Telegram markup escaping applies). The endpoint is the bot's full `sendMessage` URL,
   `https://api.telegram.org/bot<TOKEN>/sendMessage` — the URL carries the credential,
   exactly like a Slack webhook — and `chatId` (a numeric chat id or `@channelusername`)
   is required configuration. An optional `messageThreadId` sends the message to a topic of
   a forum supergroup as `message_thread_id`,
-  `{"chat_id":"...","message_thread_id":42,"text":"..."}`; absent or zero, no topic is
-  sent and the message goes to the chat as a whole. Text over 4096 characters is truncated client-side, never
+  `{"chat_id":"...","message_thread_id":42,"text":"...",...}`; absent or zero, no topic is
+  sent and the message goes to the chat as a whole. Link previews are disabled and cannot
+  be switched on: a URL in an alert should not grow a preview card or be fetched by
+  Telegram's preview crawler. Text over 4096 characters is truncated client-side, never
   between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
   outright. A failure's wait is read from the Bot API error body's
   `parameters.retry_after` (`TelegramTextFormat.botApiRetryAfter`, public for a custom

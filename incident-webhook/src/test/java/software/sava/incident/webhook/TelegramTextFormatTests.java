@@ -30,7 +30,7 @@ final class TelegramTextFormatTests {
         .customDetail("slot", 350000000L)
         .create();
     assertEquals("""
-            {"chat_id":"-1001234567890","text":"[CRITICAL] db \\"primary\\" down\\nline one\\nline two\\nSource: validator-01.example.com\\nTime: 2026-07-26T12:30:45Z\\nKey: dedup-1\\nslot: 350000000"}""",
+            {"chat_id":"-1001234567890","text":"[CRITICAL] db \\"primary\\" down\\nline one\\nline two\\nSource: validator-01.example.com\\nTime: 2026-07-26T12:30:45Z\\nKey: dedup-1\\nslot: 350000000","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("-1001234567890").render(alert)
     );
   }
@@ -44,7 +44,7 @@ final class TelegramTextFormatTests {
         .severity(IncidentSeverity.ERROR)
         .create();
     assertEquals("""
-            {"chat_id":"@channel","text":"[ERROR] a & b <tag> *bold* _it_"}""",
+            {"chat_id":"@channel","text":"[ERROR] a & b <tag> *bold* _it_","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("@channel").render(alert)
     );
   }
@@ -56,7 +56,7 @@ final class TelegramTextFormatTests {
         .severity(IncidentSeverity.INFO)
         .create();
     assertEquals("""
-            {"chat_id":"a\\"b","text":"[INFO] summary-1"}""",
+            {"chat_id":"a\\"b","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("a\"b").render(alert)
     );
   }
@@ -76,15 +76,15 @@ final class TelegramTextFormatTests {
   @Test
   void aTopicIsSentAsMessageThreadId() {
     assertEquals("""
-            {"chat_id":"-100123","message_thread_id":1,"text":"[INFO] summary-1"}""",
+            {"chat_id":"-100123","message_thread_id":1,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("-100123", 1).render(TOPIC_ALERT)
     );
     assertEquals("""
-            {"chat_id":"-100123","message_thread_id":40961,"text":"[INFO] summary-1"}""",
+            {"chat_id":"-100123","message_thread_id":40961,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("-100123", 40_961).render(TOPIC_ALERT)
     );
     assertEquals("""
-            {"chat_id":"-100123","message_thread_id":2147483647,"text":"[INFO] summary-1"}""",
+            {"chat_id":"-100123","message_thread_id":2147483647,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""",
         new TelegramTextFormat("-100123", Integer.MAX_VALUE).render(TOPIC_ALERT)
     );
   }
@@ -93,7 +93,7 @@ final class TelegramTextFormatTests {
   @Test
   void topicZeroSendsNoMessageThreadId() {
     final var expected = """
-        {"chat_id":"-100123","text":"[INFO] summary-1"}""";
+        {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""";
     assertEquals(expected, new TelegramTextFormat("-100123", 0).render(TOPIC_ALERT));
     assertEquals(expected, new TelegramTextFormat("-100123").render(TOPIC_ALERT));
   }
@@ -142,6 +142,7 @@ final class TelegramTextFormatTests {
     final var parsed = new Object() {
       String chatId, text;
       int messageThreadId;
+      boolean previewsDisabled;
     };
     JsonIterator.parse(json).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
@@ -151,6 +152,17 @@ final class TelegramTextFormatTests {
         parsed.messageThreadId = Integer.parseInt(ji.readNumberAsString());
       } else if (fieldEquals("text", buf, offset, len)) {
         parsed.text = ji.readString();
+      } else if (fieldEquals("link_preview_options", buf, offset, len)) {
+        assertEquals(ValueType.OBJECT, ji.whatIsNext());
+        ji.testObject((buf2, offset2, len2, ji2) -> {
+          if (fieldEquals("is_disabled", buf2, offset2, len2)) {
+            assertEquals(ValueType.BOOLEAN, ji2.whatIsNext());
+            parsed.previewsDisabled = ji2.readBoolean();
+          } else {
+            throw new AssertionError("unexpected link_preview_options field " + new String(buf2, offset2, len2));
+          }
+          return true;
+        });
       } else {
         throw new AssertionError("unexpected field " + new String(buf, offset, len));
       }
@@ -158,6 +170,7 @@ final class TelegramTextFormatTests {
     });
     assertEquals("chat-1", parsed.chatId);
     assertEquals(9, parsed.messageThreadId);
+    assertTrue(parsed.previewsDisabled);
     assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, parsed.text.length());
     assertTrue(parsed.text.startsWith("[WARNING] summary-1\nd"));
   }
@@ -172,7 +185,7 @@ final class TelegramTextFormatTests {
         .create();
     final var json = new TelegramTextFormat("chat-1").render(alert);
     assertEquals("""
-        {"chat_id":"chat-1","text":"%s%s"}""".formatted(prefix, summary), json);
+        {"chat_id":"chat-1","text":"%s%s","link_preview_options":{"is_disabled":true}}""".formatted(prefix, summary), json);
   }
 
   private static final String PREFIX = "[WARNING] ";
@@ -217,7 +230,7 @@ final class TelegramTextFormatTests {
     assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH - 1, text.length());
     assertEquals(PREFIX + head, text);
     assertEquals("""
-        {"chat_id":"chat-1","text":"%s%s"}""".formatted(PREFIX, head), json);
+        {"chat_id":"chat-1","text":"%s%s","link_preview_options":{"is_disabled":true}}""".formatted(PREFIX, head), json);
     assertStrictUtf8(json);
   }
 
@@ -249,7 +262,7 @@ final class TelegramTextFormatTests {
     assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, PREFIX.length() + summary.length());
     // compared as the rendered string: re-parsing would UTF-8 encode the lone half first
     assertEquals("""
-            {"chat_id":"chat-1","text":"%s%s"}""".formatted(PREFIX, summary),
+            {"chat_id":"chat-1","text":"%s%s","link_preview_options":{"is_disabled":true}}""".formatted(PREFIX, summary),
         new TelegramTextFormat("chat-1").render(alert)
     );
   }

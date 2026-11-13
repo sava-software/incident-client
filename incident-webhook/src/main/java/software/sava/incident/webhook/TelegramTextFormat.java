@@ -10,9 +10,9 @@ import static software.sava.incident.core.json.JsonUtil.escapeJson;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 /// A [Telegram Bot API `sendMessage`](https://core.telegram.org/bots/api#sendmessage)
-/// body, `{"chat_id":"...","text":"..."}`, rendering the alert as the same plain
-/// multi-line text as [WebhookFormats#SLACK_TEXT] (minus Slack's entity escaping). The
-/// endpoint is the bot's `sendMessage` URL,
+/// body, `{"chat_id":"...","text":"...","link_preview_options":{"is_disabled":true}}`,
+/// rendering the alert as the same plain multi-line text as [WebhookFormats#SLACK_TEXT]
+/// (minus Slack's entity escaping). The endpoint is the bot's `sendMessage` URL,
 /// `https://api.telegram.org/bot<TOKEN>/sendMessage` — the URL carries the credential,
 /// exactly like a Slack incoming webhook.
 ///
@@ -22,10 +22,15 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 ///
 /// `messageThreadId` targets a topic of a forum supergroup: above zero it is sent as
 /// `sendMessage`'s `message_thread_id`,
-/// `{"chat_id":"...","message_thread_id":42,"text":"..."}`; zero, the default and what the
-/// one-argument constructor gives, sends none, so the message goes to the chat as a whole
-/// (in a forum, its General topic). The Bot API reads the id as a 32-bit integer and treats
+/// `{"chat_id":"...","message_thread_id":42,"text":"...",...}`; zero, the default and what
+/// the one-argument constructor gives, sends none, so the message goes to the chat as a
+/// whole (in a forum, its General topic). The Bot API reads the id as a 32-bit integer and treats
 /// zero as no topic too; a negative id is refused here.
+///
+/// Link previews are always disabled (`link_preview_options` with `is_disabled` `true`),
+/// and there is no option to turn them back on: an alert is text, and a URL in it, such as
+/// a dashboard or runbook link, should not grow a preview card or be fetched by Telegram's
+/// preview crawler.
 ///
 /// No `parse_mode` is sent, so the text is plain, and no Telegram markup escaping
 /// applies. Text over [#MAX_TEXT_LENGTH] characters is truncated client-side, never
@@ -69,7 +74,8 @@ public record TelegramTextFormat(String chatId, int messageThreadId) implements 
         ? ",\"message_thread_id\":" + Integer.toString(messageThreadId)
         : "";
     return String.format("""
-        {"chat_id":"%s"%s,"text":"%s"}""", escapeJson(chatId), topic, escapeJson(text)
+        {"chat_id":"%s"%s,"text":"%s","link_preview_options":{"is_disabled":true}}""",
+        escapeJson(chatId), topic, escapeJson(text)
     );
   }
 

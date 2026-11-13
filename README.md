@@ -153,7 +153,8 @@ fire-and-forget notification, not incident management. `WebhookFormats.GENERIC_J
 do their own mapping; `WebhookFormats.SLACK_TEXT` (provider id `slack`) sends a plain
 `{"text":"..."}` Slack incoming-webhook message; `TelegramTextFormat` (provider id
 `telegram`) sends a Bot API `sendMessage` body to
-`https://api.telegram.org/bot<TOKEN>/sendMessage` with a configured `chatId`.
+`https://api.telegram.org/bot<TOKEN>/sendMessage` with a configured `chatId` and,
+optionally, a forum topic (`messageThreadId`); its link previews are always disabled.
 
 ```java
 final var client = WebhookClient.clientBuilder()

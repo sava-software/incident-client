@@ -78,7 +78,7 @@ final class WebhookIncidentClientFactoryTests {
     final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
     assertEquals(new TelegramTextFormat("-100123", 42), format);
     assertEquals("""
-        {"chat_id":"-100123","message_thread_id":42,"text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+        {"chat_id":"-100123","message_thread_id":42,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""", format.render(TOPIC_ALERT));
   }
 
   @Test
@@ -93,7 +93,7 @@ final class WebhookIncidentClientFactoryTests {
     final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
     assertEquals(new TelegramTextFormat("@channel", 40_961), format);
     assertEquals("""
-        {"chat_id":"@channel","message_thread_id":40961,"text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+        {"chat_id":"@channel","message_thread_id":40961,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""", format.render(TOPIC_ALERT));
   }
 
   @Test
@@ -107,7 +107,7 @@ final class WebhookIncidentClientFactoryTests {
     final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
     assertEquals(new TelegramTextFormat("@channel", 0), format);
     assertEquals("""
-        {"chat_id":"@channel","text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+        {"chat_id":"@channel","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""", format.render(TOPIC_ALERT));
   }
 
   /// The topic is a field of the shared config that only `telegram` reads: another provider

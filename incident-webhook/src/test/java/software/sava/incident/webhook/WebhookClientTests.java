@@ -592,7 +592,7 @@ final class WebhookClientTests {
         throw new AssertionError("request body is not strict UTF-8", e);
       }
       assertEquals("""
-          {"chat_id":"chat-1","text":"%s%s"}""".formatted(prefix, head), decoded);
+          {"chat_id":"chat-1","text":"%s%s","link_preview_options":{"is_disabled":true}}""".formatted(prefix, head), decoded);
     } finally {
       server.stop(0);
     }

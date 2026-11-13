@@ -22,7 +22,8 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// exact: the entity-unescaped Slack text must equal the Telegram text (inputs here stay
 /// under the Telegram truncation limit), and the Telegram chat id must round-trip, as must
 /// the Telegram topic: a `message_thread_id` number token equal to the id when it is above
-/// zero, and no such field when it is zero.
+/// zero, and no such field when it is zero. Every Telegram body must carry
+/// `link_preview_options` holding exactly `is_disabled`, the boolean `true`.
 ///
 /// The first byte selects the severity; the remainder is split on NUL bytes into
 /// summary, key, details, source, one custom-detail entry, the Telegram chat id, and the
@@ -172,6 +173,7 @@ public final class WebhookFormatFuzz {
     assertNoRawControlChars(telegramJson);
     final var telegram = new Object() {
       String chatId, text, messageThreadId;
+      Boolean previewsDisabled;
     };
     JsonIterator.parse(telegramJson).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
@@ -183,12 +185,25 @@ public final class WebhookFormatFuzz {
         telegram.messageThreadId = ji.readNumberAsString();
       } else if (fieldEquals("text", buf, offset, len)) {
         telegram.text = ji.readString();
+      } else if (fieldEquals("link_preview_options", buf, offset, len)) {
+        if (ji.whatIsNext() != ValueType.OBJECT) {
+          throw new AssertionError("link_preview_options is not an object in: " + telegramJson);
+        }
+        ji.testObject((buf2, offset2, len2, ji2) -> {
+          if (fieldEquals("is_disabled", buf2, offset2, len2) && ji2.whatIsNext() == ValueType.BOOLEAN) {
+            telegram.previewsDisabled = ji2.readBoolean();
+          } else {
+            throw new AssertionError("unexpected link_preview_options field in: " + telegramJson);
+          }
+          return true;
+        });
       } else {
         throw new AssertionError("unexpected field " + new String(buf, offset, len));
       }
       return true;
     });
     assertEq(chatId, telegram.chatId, "chat_id");
+    assertEq(Boolean.TRUE, telegram.previewsDisabled, "link_preview_options.is_disabled");
     if (messageThreadId > 0) {
       assertEq(Integer.toString(messageThreadId), telegram.messageThreadId, "message_thread_id");
     } else if (telegram.messageThreadId != null) {
