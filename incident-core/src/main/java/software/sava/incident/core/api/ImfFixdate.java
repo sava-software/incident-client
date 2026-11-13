@@ -17,8 +17,9 @@ import static java.time.temporal.ChronoField.*;
 ///
 ///     day-name "," SP 2DIGIT SP month SP 4DIGIT SP 2DIGIT ":" 2DIGIT ":" 2DIGIT SP "GMT"
 ///
-/// with case-sensitive English three-letter names, fixed widths, the literal `GMT`, and a date
-/// and time that exist.
+/// with case-sensitive English three-letter names, fixed widths, the literal `GMT`, a date
+/// and time that exist, and a year of 1900 or later (RFC 9110 section 5.6.7 gives the year the
+/// meaning RFC 5322 section 3.3 gives it).
 /// [IncidentClientException#retryAfter(java.net.http.HttpResponse)] states the rule and its
 /// limits for every reader of an HTTP-date here.
 final class ImfFixdate {
@@ -52,6 +53,9 @@ final class ImfFixdate {
       .withResolverStyle(ResolverStyle.STRICT)
       .withChronology(IsoChronology.INSTANCE);
 
+  /// The first year an HTTP-date may name (RFC 5322 section 3.3 through RFC 9110 section 5.6.7).
+  private static final int FIRST_YEAR = 1900;
+
   private ImfFixdate() {
   }
 
@@ -62,7 +66,8 @@ final class ImfFixdate {
       return null;
     }
     try {
-      return LocalDateTime.parse(value, FORMAT).toInstant(ZoneOffset.UTC);
+      final var dateTime = LocalDateTime.parse(value, FORMAT);
+      return dateTime.getYear() < FIRST_YEAR ? null : dateTime.toInstant(ZoneOffset.UTC);
     } catch (final DateTimeException notAnImfFixdate) {
       return null;
     }

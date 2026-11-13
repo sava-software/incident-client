@@ -96,7 +96,8 @@ final class ImfFixdateTests {
         "Thu, 12 Nov ２０２６ 10:00:30 GMT",
         "Thu, 12 Nov +2026 10:00:30 GMT",
         "Thu, 12 Nov -026 10:00:30 GMT",
-        // four digits and the right weekday for that year: only the sign refuses it
+        // four digits and the right weekday for that year: the sign refuses it, and the year
+        // bound would too
         "Tue, 12 Nov -2026 10:00:30 GMT",
         "Thursday, 12 Nov 2026 10:00:30 GMT",
         "Thu, 12 November 2026 10:00:30 GMT",
@@ -104,5 +105,16 @@ final class ImfFixdateTests {
         "Thu, 12 Nov 2026 10:00:30 Gmt")) {
       assertNull(ImfFixdate.parse(value), value);
     }
+  }
+
+  /// RFC 9110 section 5.6.7 gives the year the meaning RFC 5322 section 3.3 gives it, 1900 or
+  /// later: the first second of 1900 is read, the last second of 1899 and an earlier year
+  /// are null, each with the weekday that is right for its date, so only the year refuses it.
+  @Test
+  void aYearBefore1900IsNull() {
+    assertEquals(Instant.parse("1900-01-01T00:00:00Z"), ImfFixdate.parse("Mon, 01 Jan 1900 00:00:00 GMT"));
+    assertNull(ImfFixdate.parse("Sun, 31 Dec 1899 23:59:59 GMT"));
+    assertNull(ImfFixdate.parse("Wed, 01 Jan 1000 00:00:00 GMT"));
+    assertNull(ImfFixdate.parse("Sat, 01 Jan 0000 00:00:00 GMT"));
   }
 }

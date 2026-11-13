@@ -39,14 +39,16 @@ public interface IncidentClientException {
   ///   `day-name "," SP 2DIGIT SP month SP 4DIGIT SP 2DIGIT ":" 2DIGIT ":" 2DIGIT SP "GMT"`,
   ///   with case-sensitive English three-letter names (`Mon`..`Sun`, `Jan`..`Dec`), fixed
   ///   widths, the literal `GMT`, and a real date and time: the weekday matches the date, the
-  ///   day exists in its month and year, the hour is 00-23, the minute and second 00-59.
-  ///   Anything else is null, such as lower-case names, a missing weekday or seconds, a
-  ///   one-digit day, a year that is not four digits, a day that does not exist, `24:00:00`,
-  ///   or a zone other than `GMT`. The wait is the time from the response's own `Date`
-  ///   header ([#responseDate(HttpResponse)], read by the same rule) to that date, and
-  ///   [Duration#ZERO] when the date is not after it. Measuring from `Date` rather than the
-  ///   local clock makes the wait count from the response, as delay-seconds does, so the
-  ///   local clock's skew against the server's never matters.
+  ///   day exists in its month and year, the hour is 00-23, the minute and second 00-59, and
+  ///   the year is 1900 or later (RFC 9110 section 5.6.7 gives it the meaning RFC 5322
+  ///   section 3.3 gives it). Anything else is null, such as lower-case names, a missing
+  ///   weekday or seconds, a one-digit day, a year that is not four digits, a year before
+  ///   1900, a day that does not exist, `24:00:00`, or a zone other than `GMT`. The wait is
+  ///   the time from the response's own `Date` header ([#responseDate(HttpResponse)], read by
+  ///   the same rule) to that date, and [Duration#ZERO] when the date is not after it.
+  ///   Measuring from `Date` rather than the local clock makes the wait count from the
+  ///   response, as delay-seconds does, so the local clock's skew against the server's never
+  ///   matters.
   ///
   /// The limits of the date form, stated here once: a response without a readable `Date` has
   /// nothing to measure from, and its date form is null (RFC 9110 lets a 5xx omit `Date`);

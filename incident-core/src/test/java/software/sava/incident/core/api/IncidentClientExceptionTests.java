@@ -216,6 +216,24 @@ final class IncidentClientExceptionTests {
     }
   }
 
+  /// An HTTP-date's year is 1900 or later (RFC 5322 section 3.3 through RFC 9110 section
+  /// 5.6.7). A `Retry-After` in 1899 is null rather than a date already past, which would be
+  /// zero; a `Date` in 1899 is no `Date`, so a valid date-form `Retry-After` has nothing to be
+  /// measured from.
+  @Test
+  void anHttpDateBefore1900IsNullOnEitherHeader() {
+    final var lastSecondOf1899 = "Sun, 31 Dec 1899 23:59:59 GMT";
+    assertNull(parse(lastSecondOf1899, DATE));
+    assertNull(IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, lastSecondOf1899)));
+    assertNull(parse("Thu, 12 Nov 2026 10:05:00 GMT", lastSecondOf1899));
+    // the first second of 1900 is read on either header
+    final var firstSecondOf1900 = "Mon, 01 Jan 1900 00:00:00 GMT";
+    assertEquals(Duration.ZERO, parse(firstSecondOf1900, DATE));
+    assertEquals(Instant.parse("1900-01-01T00:00:00Z"),
+        IncidentClientException.responseDate(HeaderResponse.retryAfterAndDate(null, firstSecondOf1900)));
+    assertEquals(Duration.ofSeconds(30), parse("Mon, 01 Jan 1900 00:00:30 GMT", firstSecondOf1900));
+  }
+
   /// A date at or before the response's `Date` is no wait left: zero.
   @Test
   void anHttpDateNotAfterTheResponsesDateIsZero() {

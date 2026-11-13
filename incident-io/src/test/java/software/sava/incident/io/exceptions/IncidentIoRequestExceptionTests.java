@@ -476,6 +476,15 @@ final class IncidentIoRequestExceptionTests {
         retryAfter(Map.of("Retry-After", "Thu, 12 Nov 2026 11:00:30 +0100", "Date", DATE), body));
   }
 
+  /// A `Retry-After` in 1899 is no HTTP-date (its year is 1900 or later, RFC 5322 section 3.3
+  /// through RFC 9110 section 5.6.7), not a date already past: it does not read as a zero wait
+  /// that hides the body's, and the body's 30 seconds decide.
+  @Test
+  void aRetryAfterHeaderBefore1900FallsThroughToTheBody() {
+    assertEquals(Duration.ofSeconds(30), retryAfter(
+        Map.of("Retry-After", "Sun, 31 Dec 1899 23:59:59 GMT", "Date", DATE), rateLimited("2026-11-12T10:00:30Z")));
+  }
+
   /// A `Retry-After` header in its HTTP-date form, measured from `Date`, wins over the body's
   /// instant too.
   @Test
