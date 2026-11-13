@@ -61,7 +61,75 @@ final class WebhookIncidentClientFactoryTests {
     final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
     final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
     assertEquals("-100123", format.chatId());
+    assertEquals(0, format.messageThreadId());
     assertEquals(URI.create("https://api.telegram.org/bot123:ABC/sendMessage"), client.endpoint());
+  }
+
+  private static final IncidentAlert TOPIC_ALERT = IncidentAlert.build()
+      .summary("summary-1")
+      .severity(IncidentSeverity.INFO)
+      .create();
+
+  @Test
+  void telegramWithATopicFromJson() {
+    final var client = IncidentClients.createClient(JsonIterator.parse("""
+        {"provider":"telegram","config":{"endpoint":"https://api.telegram.org/bot123:ABC/sendMessage","chatId":"-100123","messageThreadId":42}}"""));
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals(new TelegramTextFormat("-100123", 42), format);
+    assertEquals("""
+        {"chat_id":"-100123","message_thread_id":42,"text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+  }
+
+  @Test
+  void telegramWithATopicFromProperties() {
+    final var properties = new Properties();
+    properties.setProperty("incident.provider", "telegram");
+    properties.setProperty("incident.endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    properties.setProperty("incident.chatId", "@channel");
+    properties.setProperty("incident.messageThreadId", "40961");
+    final var client = IncidentClients.createClient(properties, "incident");
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals(new TelegramTextFormat("@channel", 40_961), format);
+    assertEquals("""
+        {"chat_id":"@channel","message_thread_id":40961,"text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+  }
+
+  @Test
+  void telegramWithoutATopicSendsTheChatBody() {
+    final var properties = new Properties();
+    properties.setProperty("provider", "telegram");
+    properties.setProperty("endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    properties.setProperty("chatId", "@channel");
+    final var client = IncidentClients.createClient(properties);
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals(new TelegramTextFormat("@channel", 0), format);
+    assertEquals("""
+        {"chat_id":"@channel","text":"[INFO] summary-1"}""", format.render(TOPIC_ALERT));
+  }
+
+  /// The topic is a field of the shared config that only `telegram` reads: another provider
+  /// builds its own format with a valid one present, yet the shared parse still refuses an
+  /// invalid one, whichever provider is configured.
+  @Test
+  void anotherProviderIgnoresTheTopic() {
+    final var properties = new Properties();
+    properties.setProperty("provider", "slack");
+    properties.setProperty("endpoint", "https://hooks.slack.com/services/T000/B000/secret");
+    properties.setProperty("chatId", "@channel");
+    properties.setProperty("messageThreadId", "42");
+    final var slack = assertInstanceOf(WebhookIncidentClient.class, IncidentClients.createClient(properties));
+    assertSame(WebhookFormats.SLACK_TEXT, slack.format());
+
+    properties.setProperty("provider", "webhook");
+    final var webhook = assertInstanceOf(WebhookIncidentClient.class, IncidentClients.createClient(properties));
+    assertSame(WebhookFormats.GENERIC_JSON, webhook.format());
+
+    properties.setProperty("messageThreadId", "topic");
+    final var ex = assertThrows(IllegalStateException.class, () -> IncidentClients.createClient(properties));
+    assertEquals("WebhookConfig messageThreadId must be an integer from 0 to 2147483647: 'topic'.", ex.getMessage());
   }
 
   @Test

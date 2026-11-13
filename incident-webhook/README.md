@@ -35,7 +35,10 @@ may read the wait a failed response's body asks for.
   applies). The endpoint is the bot's full `sendMessage` URL,
   `https://api.telegram.org/bot<TOKEN>/sendMessage` — the URL carries the credential,
   exactly like a Slack webhook — and `chatId` (a numeric chat id or `@channelusername`)
-  is required configuration. Text over 4096 characters is truncated client-side, never
+  is required configuration. An optional `messageThreadId` sends the message to a topic of
+  a forum supergroup as `message_thread_id`,
+  `{"chat_id":"...","message_thread_id":42,"text":"..."}`; absent or zero, no topic is
+  sent and the message goes to the chat as a whole. Text over 4096 characters is truncated client-side, never
   between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
   outright. A failure's wait is read from the Bot API error body's
   `parameters.retry_after` (`TelegramTextFormat.botApiRetryAfter`, public for a custom
@@ -134,7 +137,11 @@ To register your own provider id for config-driven use, publish an
 `WebhookConfig` extends `BaseWebhookIncidentClientFactory` and returns its format; a
 provider needing extra config fields implements the SPI directly and composes
 `WebhookConfig.parser()`, keeping the shared field handling and the strict
-unknown-field errors:
+unknown-field errors. The shared parser reads the keys `endpoint`, `requestTimeout`,
+`headers`, `bearerToken`, `chatId` and `messageThreadId` under your prefix. From
+Properties it reads and validates `messageThreadId` (an integer from 0 to 2147483647)
+even when your factory reads that key too; in JSON a field your parser matches first never
+reaches it. So name your own fields differently:
 
 ```java
 @Override
@@ -159,7 +166,10 @@ end-to-end using only public API.
 
 `WebhookConfig` parses a client configuration from `Properties` (optionally with a key
 prefix) or from JSON. `endpoint` is required — it is your webhook URL, so there is no
-default; `requestTimeout`, `headers`, and `bearerToken` are optional.
+default; `requestTimeout`, `headers`, and `bearerToken` are optional, as is
+`messageThreadId`, the forum topic only the `telegram` provider reads (an integer from 0 to
+2147483647; absent, a blank property, a JSON null or 0 means no topic; JSON takes a number
+or null, never a string; anything else fails the parse, whichever provider is configured).
 
 ```properties
 incident.provider=slack
@@ -177,6 +187,7 @@ incident.requestTimeout=5S
 incident.provider=telegram
 incident.endpoint=https://api.telegram.org/bot<TOKEN>/sendMessage
 incident.chatId=-1001234567890
+incident.messageThreadId=42
 ```
 
 ```json

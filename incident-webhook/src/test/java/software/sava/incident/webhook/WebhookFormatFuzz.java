@@ -3,6 +3,7 @@ package software.sava.incident.webhook;
 import software.sava.incident.core.api.IncidentAlert;
 import software.sava.incident.core.api.IncidentSeverity;
 import systems.comodal.jsoniter.JsonIterator;
+import systems.comodal.jsoniter.ValueType;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -19,10 +20,15 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// transform (`&`/`<`/`>` → `&amp;`/`&lt;`/`&gt;`), which is inverted and checked for
 /// containment. Slack and Telegram share one plain-text renderer, so the differential is
 /// exact: the entity-unescaped Slack text must equal the Telegram text (inputs here stay
-/// under the Telegram truncation limit), and the Telegram chat id must round-trip.
+/// under the Telegram truncation limit), and the Telegram chat id must round-trip, as must
+/// the Telegram topic: a `message_thread_id` number token equal to the id when it is above
+/// zero, and no such field when it is zero.
 ///
 /// The first byte selects the severity; the remainder is split on NUL bytes into
-/// summary, key, details, source, one custom-detail entry, and the Telegram chat id.
+/// summary, key, details, source, one custom-detail entry, the Telegram chat id, and the
+/// Telegram topic. The topic part is optional: its [String#hashCode()] with the sign bit
+/// cleared is the message thread id, so an absent or empty part is 0 (no topic), and any
+/// id from 0 to [Integer#MAX_VALUE] is reachable.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///
@@ -161,14 +167,20 @@ public final class WebhookFormatFuzz {
     // maxLen bounds the plain text well under MAX_TEXT_LENGTH, so no truncation: the
     // entity-unescaped slack text and the telegram text must be identical
     final var chatId = parts.length > 6 && !parts[6].isBlank() ? parts[6] : "chat-1";
-    final var telegramJson = new TelegramTextFormat(chatId).render(alert);
+    final int messageThreadId = parts.length > 7 ? parts[7].hashCode() & Integer.MAX_VALUE : 0;
+    final var telegramJson = new TelegramTextFormat(chatId, messageThreadId).render(alert);
     assertNoRawControlChars(telegramJson);
     final var telegram = new Object() {
-      String chatId, text;
+      String chatId, text, messageThreadId;
     };
     JsonIterator.parse(telegramJson).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
         telegram.chatId = ji.readString();
+      } else if (fieldEquals("message_thread_id", buf, offset, len)) {
+        if (ji.whatIsNext() != ValueType.NUMBER) {
+          throw new AssertionError("message_thread_id is not a number in: " + telegramJson);
+        }
+        telegram.messageThreadId = ji.readNumberAsString();
       } else if (fieldEquals("text", buf, offset, len)) {
         telegram.text = ji.readString();
       } else {
@@ -177,6 +189,11 @@ public final class WebhookFormatFuzz {
       return true;
     });
     assertEq(chatId, telegram.chatId, "chat_id");
+    if (messageThreadId > 0) {
+      assertEq(Integer.toString(messageThreadId), telegram.messageThreadId, "message_thread_id");
+    } else if (telegram.messageThreadId != null) {
+      throw new AssertionError("message_thread_id should have been omitted, parsed '" + telegram.messageThreadId + '\'');
+    }
     assertEq(unescaped, telegram.text, "telegram text vs unescaped slack text");
   }
 

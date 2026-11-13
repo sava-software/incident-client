@@ -3,6 +3,7 @@ package software.sava.incident.webhook.config;
 import software.sava.incident.core.config.HttpApiClientConfig;
 import software.sava.incident.webhook.WebhookClient;
 import systems.comodal.jsoniter.JsonIterator;
+import systems.comodal.jsoniter.ValueType;
 
 import java.net.URI;
 import java.time.Duration;
@@ -18,7 +19,12 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// webhook URL and there is no meaningful default. `requestTimeout`, static `headers`,
 /// and a `bearerToken` convenience (an `Authorization: Bearer ...` header) are optional.
 /// `chatId` is the destination for chat-targeted providers (required by `telegram`,
-/// unused otherwise).
+/// unused otherwise), and `messageThreadId` the forum topic within it (optional, read by
+/// `telegram` alone; absent, a blank property, a JSON null, or zero means no topic).
+/// `messageThreadId` is an integer from 0 to [Integer#MAX_VALUE]: ASCII digits alone in
+/// properties, a JSON number, never a string, in JSON; anything else fails the parse with
+/// an [IllegalStateException] naming the field and the value, or for a JSON token that is
+/// neither a number nor a string its type, whichever provider is configured.
 ///
 /// Properties headers are keyed under `headers.`, JSON headers as an object:
 ///
@@ -35,16 +41,19 @@ public final class WebhookConfig extends HttpApiClientConfig {
   private final String bearerToken;
   private final Map<String, String> headers;
   private final String chatId;
+  private final int messageThreadId;
 
   private WebhookConfig(final URI endpoint,
                         final Duration requestTimeout,
                         final String bearerToken,
                         final Map<String, String> headers,
-                        final String chatId) {
+                        final String chatId,
+                        final int messageThreadId) {
     super(endpoint, requestTimeout);
     this.bearerToken = bearerToken;
     this.headers = headers;
     this.chatId = chatId;
+    this.messageThreadId = messageThreadId;
   }
 
   public WebhookClient.Builder createClientBuilder() {
@@ -101,6 +110,39 @@ public final class WebhookConfig extends HttpApiClientConfig {
     return chatId;
   }
 
+  /// Forum topic within [#chatId()] for chat-targeted providers, Telegram's
+  /// `message_thread_id`; 0, meaning no topic, when not configured.
+  public int messageThreadId() {
+    return messageThreadId;
+  }
+
+  /// `value`, a `messageThreadId` as configured: 0 when null or blank; otherwise ASCII
+  /// digits alone that fit an `int`, else an [IllegalStateException] naming the field and
+  /// the value. The digit check comes first because [Integer#parseInt(String)] also takes a
+  /// sign and non-ASCII digits.
+  private static int parseMessageThreadId(final String value) {
+    if (value == null || value.isBlank()) {
+      return 0;
+    }
+    for (int i = 0; i < value.length(); ++i) {
+      final char c = value.charAt(i);
+      if (c < '0' || c > '9') {
+        throw invalidMessageThreadId(value);
+      }
+    }
+    try {
+      return Integer.parseInt(value);
+    } catch (final NumberFormatException overIntMaxValue) {
+      throw invalidMessageThreadId(value);
+    }
+  }
+
+  private static IllegalStateException invalidMessageThreadId(final String value) {
+    return new IllegalStateException(
+        "WebhookConfig messageThreadId must be an integer from 0 to " + Integer.MAX_VALUE + ": '" + value + "'."
+    );
+  }
+
   /// Public for composition by third-party provider factories whose config carries
   /// fields beyond this one's: parse your own fields first and delegate everything else
   /// here, so `endpoint`/`requestTimeout`/`headers`/`bearerToken` handling — and the
@@ -122,6 +164,7 @@ public final class WebhookConfig extends HttpApiClientConfig {
     private String bearerToken;
     private final Map<String, String> headers;
     private String chatId;
+    private int messageThreadId;
 
     private Parser(final String prefix) {
       super(prefix);
@@ -146,7 +189,8 @@ public final class WebhookConfig extends HttpApiClientConfig {
           // header order is contractual (JSON document order) and Map.copyOf would
           // shuffle it, so every size takes the order-preserving copy
           Collections.unmodifiableMap(new LinkedHashMap<>(headers)),
-          chatId
+          chatId,
+          messageThreadId
       );
     }
 
@@ -157,6 +201,7 @@ public final class WebhookConfig extends HttpApiClientConfig {
       super.parseConfig(properties);
       this.bearerToken = properties.getProperty(prefix + "bearerToken");
       this.chatId = properties.getProperty(prefix + "chatId");
+      this.messageThreadId = parseMessageThreadId(properties.getProperty(prefix + "messageThreadId"));
       final var headerPrefix = prefix + "headers.";
       // sorted for a deterministic header order; Properties iteration order is not stable
       for (final var name : new TreeSet<>(properties.stringPropertyNames())) {
@@ -175,12 +220,32 @@ public final class WebhookConfig extends HttpApiClientConfig {
         this.bearerToken = ji.readString();
       } else if (fieldEquals("chatId", buf, offset, len)) {
         this.chatId = ji.readString();
+      } else if (fieldEquals("messageThreadId", buf, offset, len)) {
+        this.messageThreadId = readMessageThreadId(ji);
       } else if (fieldEquals("headers", buf, offset, len)) {
         ji.readMap(headers, String::new, (header, headerJi) -> headerJi.readString());
       } else {
         return super.test(buf, offset, len, ji);
       }
       return true;
+    }
+
+    /// A JSON number token as [#parseMessageThreadId(String)] reads it, `null` as absent;
+    /// any other token, a numeric string included, is refused.
+    private static int readMessageThreadId(final JsonIterator ji) {
+      final var next = ji.whatIsNext();
+      if (next == ValueType.NUMBER) {
+        return parseMessageThreadId(ji.readNumberAsString());
+      } else if (next == ValueType.NULL) {
+        ji.skip();
+        return 0;
+      } else if (next == ValueType.STRING) {
+        throw new IllegalStateException(
+            "WebhookConfig messageThreadId must be a JSON number, not the string '" + ji.readString() + "'."
+        );
+      } else {
+        throw new IllegalStateException("WebhookConfig messageThreadId must be a JSON number, not " + next + '.');
+      }
     }
   }
 }

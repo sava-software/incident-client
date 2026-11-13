@@ -27,10 +27,10 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
 - `incident-webhook/` — generic webhook POSTer: one shared transport/config/exception
   stack; per-product variance is isolated in `WebhookFormat` (built-ins:
   `GENERIC_JSON` under provider id `webhook`, `SLACK_TEXT` under `slack`, and the
-  stateful `TelegramTextFormat` under `telegram` — chat id from config, Bot API
-  `sendMessage` endpoint). A format may also read the wait from a failed response's body
-  (`WebhookFormat.retryAfter(String)`); `TelegramTextFormat` reads the Bot API's
-  `parameters.retry_after`. Notification only — no incident lifecycle,
+  stateful `TelegramTextFormat` under `telegram` — chat id and optional forum topic
+  (`messageThreadId`) from config, Bot API `sendMessage` endpoint). A format may also
+  read the wait from a failed response's body (`WebhookFormat.retryAfter(String)`);
+  `TelegramTextFormat` reads the Bot API's `parameters.retry_after`. Notification only — no incident lifecycle,
   `supportsResolve()` is false.
 - `incident-examples/` — runnable usage examples; not published.
 
@@ -175,9 +175,10 @@ Conventions to preserve:
 - Every fuzz target here declares a `seedCorpus`. A corpus does two independent jobs:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
   and *regression* (a committed landing place for findings — the `request`, `alertEvent`,
-  `alertEventResponse`, `payload`, `format` and `retryAfter` corpora; the `request`,
-  `payload` and `format` corpora were measured to change no mutation score, and the
-  `alertEvent`, `alertEventResponse` and `retryAfter` corpora have not been measured). "The
+  `alertEventResponse`, `payload`, `format` and `retryAfter` corpora; the `request` and
+  `payload` corpora and the `format` corpus's `full-fields.bin` were measured to change no
+  mutation score, and `format`'s `topic.bin` and the `alertEvent`, `alertEventResponse` and
+  `retryAfter` corpora have not been measured). "The
   mutator reaches this format from scratch" answers only the bootstrap question. All seven
   targets here declare one; if a future target genuinely does neither job, take the decline
   property from `:<module>:hardeningHelp`, and record the measurement that justified it the way an

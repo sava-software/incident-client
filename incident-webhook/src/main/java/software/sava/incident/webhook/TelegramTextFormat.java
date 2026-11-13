@@ -20,6 +20,13 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// it is per-destination configuration, which is why this format carries state where the
 /// [WebhookFormats] constants do not.
 ///
+/// `messageThreadId` targets a topic of a forum supergroup: above zero it is sent as
+/// `sendMessage`'s `message_thread_id`,
+/// `{"chat_id":"...","message_thread_id":42,"text":"..."}`; zero, the default and what the
+/// one-argument constructor gives, sends none, so the message goes to the chat as a whole
+/// (in a forum, its General topic). The Bot API reads the id as a 32-bit integer and treats
+/// zero as no topic too; a negative id is refused here.
+///
 /// No `parse_mode` is sent, so the text is plain, and no Telegram markup escaping
 /// applies. Text over [#MAX_TEXT_LENGTH] characters is truncated client-side, never
 /// between the two halves of a surrogate pair (the cut then keeps one character fewer):
@@ -28,15 +35,24 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 ///
 /// A failed request's wait is read from the Bot API error body's `parameters.retry_after`
 /// ([#retryAfter(String)], [#botApiRetryAfter(String)]).
-public record TelegramTextFormat(String chatId) implements WebhookFormat {
+public record TelegramTextFormat(String chatId, int messageThreadId) implements WebhookFormat {
 
   /// The `sendMessage` `text` limit, in characters.
   public static final int MAX_TEXT_LENGTH = 4_096;
 
+  /// `chatId` is required; `messageThreadId` is zero for no topic and must not be negative.
   public TelegramTextFormat {
     if (chatId == null || chatId.isBlank()) {
       throw new IllegalStateException("TelegramTextFormat chatId is required.");
     }
+    if (messageThreadId < 0) {
+      throw new IllegalStateException("TelegramTextFormat messageThreadId must not be negative: " + messageThreadId + '.');
+    }
+  }
+
+  /// A format for the chat as a whole: no topic (`messageThreadId` zero).
+  public TelegramTextFormat(final String chatId) {
+    this(chatId, 0);
   }
 
   @Override
@@ -49,8 +65,11 @@ public record TelegramTextFormat(String chatId) implements WebhookFormat {
           : MAX_TEXT_LENGTH;
       text = text.substring(0, end);
     }
+    final var topic = messageThreadId > 0
+        ? ",\"message_thread_id\":" + Integer.toString(messageThreadId)
+        : "";
     return String.format("""
-        {"chat_id":"%s","text":"%s"}""", escapeJson(chatId), escapeJson(text)
+        {"chat_id":"%s"%s,"text":"%s"}""", escapeJson(chatId), topic, escapeJson(text)
     );
   }
 

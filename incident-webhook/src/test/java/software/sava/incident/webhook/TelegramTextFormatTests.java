@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import software.sava.incident.core.api.IncidentAlert;
 import software.sava.incident.core.api.IncidentSeverity;
 import systems.comodal.jsoniter.JsonIterator;
+import systems.comodal.jsoniter.ValueType;
 
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -67,6 +68,68 @@ final class TelegramTextFormatTests {
     assertThrows(IllegalStateException.class, () -> new TelegramTextFormat(" "));
   }
 
+  private static final IncidentAlert TOPIC_ALERT = IncidentAlert.build()
+      .summary("summary-1")
+      .severity(IncidentSeverity.INFO)
+      .create();
+
+  @Test
+  void aTopicIsSentAsMessageThreadId() {
+    assertEquals("""
+            {"chat_id":"-100123","message_thread_id":1,"text":"[INFO] summary-1"}""",
+        new TelegramTextFormat("-100123", 1).render(TOPIC_ALERT)
+    );
+    assertEquals("""
+            {"chat_id":"-100123","message_thread_id":40961,"text":"[INFO] summary-1"}""",
+        new TelegramTextFormat("-100123", 40_961).render(TOPIC_ALERT)
+    );
+    assertEquals("""
+            {"chat_id":"-100123","message_thread_id":2147483647,"text":"[INFO] summary-1"}""",
+        new TelegramTextFormat("-100123", Integer.MAX_VALUE).render(TOPIC_ALERT)
+    );
+  }
+
+  /// Zero is no topic: the body is the one the one-argument format renders, byte for byte.
+  @Test
+  void topicZeroSendsNoMessageThreadId() {
+    final var expected = """
+        {"chat_id":"-100123","text":"[INFO] summary-1"}""";
+    assertEquals(expected, new TelegramTextFormat("-100123", 0).render(TOPIC_ALERT));
+    assertEquals(expected, new TelegramTextFormat("-100123").render(TOPIC_ALERT));
+  }
+
+  @Test
+  void theOneArgumentConstructorMeansNoTopic() {
+    final var format = new TelegramTextFormat("chat-1");
+    assertEquals(new TelegramTextFormat("chat-1", 0), format);
+    assertEquals("chat-1", format.chatId());
+    assertEquals(0, format.messageThreadId());
+    assertEquals(7, new TelegramTextFormat("chat-1", 7).messageThreadId());
+  }
+
+  @Test
+  void aNegativeTopicIsRefused() {
+    final var minusOne = assertThrows(IllegalStateException.class, () -> new TelegramTextFormat("chat-1", -1));
+    assertEquals("TelegramTextFormat messageThreadId must not be negative: -1.", minusOne.getMessage());
+    final var min = assertThrows(IllegalStateException.class,
+        () -> new TelegramTextFormat("chat-1", Integer.MIN_VALUE));
+    assertEquals("TelegramTextFormat messageThreadId must not be negative: -2147483648.", min.getMessage());
+  }
+
+  /// The chat id is checked before the topic.
+  @Test
+  void aMissingChatIdIsReportedBeforeANegativeTopic() {
+    final var ex = assertThrows(IllegalStateException.class, () -> new TelegramTextFormat(null, -1));
+    assertEquals("TelegramTextFormat chatId is required.", ex.getMessage());
+  }
+
+  @Test
+  void toStringNamesBothComponents() {
+    assertEquals("TelegramTextFormat[chatId=chat-1, messageThreadId=0]", new TelegramTextFormat("chat-1").toString());
+    assertEquals("TelegramTextFormat[chatId=@channel, messageThreadId=42]",
+        new TelegramTextFormat("@channel", 42).toString());
+  }
+
   @Test
   void textTruncatesAtTheSendMessageLimit() {
     final var alert = IncidentAlert.build()
@@ -74,14 +137,18 @@ final class TelegramTextFormatTests {
         .details("d".repeat(TelegramTextFormat.MAX_TEXT_LENGTH + 100))
         .severity(IncidentSeverity.WARNING)
         .create();
-    final var json = new TelegramTextFormat("chat-1").render(alert);
+    final var json = new TelegramTextFormat("chat-1", 9).render(alert);
 
     final var parsed = new Object() {
       String chatId, text;
+      int messageThreadId;
     };
     JsonIterator.parse(json).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
         parsed.chatId = ji.readString();
+      } else if (fieldEquals("message_thread_id", buf, offset, len)) {
+        assertEquals(ValueType.NUMBER, ji.whatIsNext());
+        parsed.messageThreadId = Integer.parseInt(ji.readNumberAsString());
       } else if (fieldEquals("text", buf, offset, len)) {
         parsed.text = ji.readString();
       } else {
@@ -90,6 +157,7 @@ final class TelegramTextFormatTests {
       return true;
     });
     assertEquals("chat-1", parsed.chatId);
+    assertEquals(9, parsed.messageThreadId);
     assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, parsed.text.length());
     assertTrue(parsed.text.startsWith("[WARNING] summary-1\nd"));
   }

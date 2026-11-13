@@ -12,7 +12,12 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
   escaping, the entity transform, and the Slack/Telegram differential. The NUL-delimited format
   is trivial for the mutator to reach from scratch, so this corpus exists as the
   landing place for findings (each committed as a seed plus a named regression
-  test), not to buy coverage.
+  test), not to buy coverage. It has no topic part, so it pins the topic-less body.
+- `topic.bin` — `full-fields.bin` plus an eighth NUL-delimited part, the Telegram topic
+  `forum-topic`. The harness takes that part's `String.hashCode()` with the sign bit
+  cleared as the message thread id (an absent or empty part is 0, no topic), so this seed
+  sends `message_thread_id` 415388035 and pins its round trip as a JSON number. Added as
+  the landing place for the topic field, not measured against a mutation score.
 
 ## `retryAfter/` (regression corpus for `WebhookRetryAfterFuzz`)
 

@@ -6,7 +6,8 @@ import software.sava.incident.webhook.config.WebhookConfig;
 /// [TelegramTextFormat] messages to a Telegram Bot API `sendMessage` URL; registered
 /// under provider id `telegram`. Configure the full URL as `endpoint` —
 /// `https://api.telegram.org/bot<TOKEN>/sendMessage`, the URL carrying the credential —
-/// and the destination as `chatId` (a numeric chat id or `@channelusername`).
+/// and the destination as `chatId` (a numeric chat id or `@channelusername`), plus, for a
+/// topic of a forum supergroup, `messageThreadId` (absent or zero: no topic).
 public final class TelegramWebhookIncidentClientFactory extends BaseWebhookIncidentClientFactory {
 
   public TelegramWebhookIncidentClientFactory() {
@@ -19,6 +20,6 @@ public final class TelegramWebhookIncidentClientFactory extends BaseWebhookIncid
     if (chatId == null || chatId.isBlank()) {
       throw new IllegalStateException("WebhookConfig chatId is required for the telegram provider.");
     }
-    return new TelegramTextFormat(chatId);
+    return new TelegramTextFormat(chatId, config.messageThreadId());
   }
 }
