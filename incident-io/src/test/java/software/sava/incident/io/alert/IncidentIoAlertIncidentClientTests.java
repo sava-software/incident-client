@@ -263,15 +263,19 @@ final class IncidentIoAlertIncidentClientTests {
   }
 
   /// A blank key is a caller error: through the service it must not be retried as a transport
-  /// failure, which on the unbounded overload would retry forever and send nothing.
+  /// failure, which on the unbounded overload would retry forever and send nothing. The
+  /// adapter throws it, and the service ends the call with it at once, through the future it
+  /// returns.
   @Test
   void aBlankResolveKeyIsNotRetriedByTheService() {
     final var stub = new StubClient();
     final var service = IncidentService.createService(stub.incidentClientBuilder().createClient());
 
     for (final var key : new String[]{"", " \t"}) {
-      final var thrown = assertThrows(IllegalArgumentException.class,
-          () -> service.resolveIncident(key, 0L, 0L, TimeUnit.MILLISECONDS));
+      final var future = service.resolveIncident(key, 0L, 0L, TimeUnit.MILLISECONDS);
+      assertTrue(future.isDone(), "no retry is pending");
+      final var thrown = assertInstanceOf(IllegalArgumentException.class,
+          assertThrows(java.util.concurrent.CompletionException.class, future::join).getCause());
       assertEquals("A resolve requires the alert's key.", thrown.getMessage());
     }
     assertTrue(stub.events.isEmpty());

@@ -1421,6 +1421,87 @@ final class IncidentServiceTests {
     assertEquals(2, client.calls.get());
   }
 
+  /// (o) A client that throws on the first attempt fails the returned future as well, the way
+  /// a throw on a later attempt does (n): the call itself does not throw, the throw is not
+  /// retried even when it says it can be, and no delay is served. On report and on resolve.
+  @Test
+  void aThrowOnTheFirstAttemptFailsTheFuture() {
+    final List<java.util.function.Function<IncidentService, CompletableFuture<IncidentResponse>>> calls = List.of(
+        service -> service.reportIncident(ALERT, constant(5), MS),
+        service -> service.reportIncident(ALERT, Integer.MAX_VALUE, 1, 1, MS),
+        service -> service.resolveIncident("key-o", constant(5), MS));
+    for (final var thrown : List.of(
+        new IllegalArgumentException("refused before any request"),
+        new TestClientException(true))) {
+      for (final var call : calls) {
+        final var client = new StubClient(0, true);
+        client.thrownSynchronously = thrown;
+        final var delays = new RecordingDelays();
+        final var future = call.apply(new IncidentServiceVal(client, Duration.ofMinutes(1), delays));
+        assertTrue(future.isDone());
+        assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+        assertEquals(List.of(), delays.requests);
+        assertEquals(1, client.calls.get());
+      }
+    }
+  }
+
+  /// (o) A dependent stage receives a throw in the same shape on the first attempt as on a
+  /// later one, the shape of every other failure of the call: a CompletionException holding
+  /// what was thrown, and a thrown CompletionException as it is, not wrapped again.
+  @Test
+  void aThrowReachesADependentStageTheSameWayOnEveryAttempt() {
+    final var plain = new IllegalArgumentException("refused before any request");
+    final var wrapped = new CompletionException(new IllegalStateException("thrown already wrapped"));
+    for (final int failuresFirst : new int[]{0, 1}) {
+      for (final var thrown : List.of(plain, wrapped)) {
+        final var client = new StubClient(failuresFirst, true);
+        client.thrownSynchronously = thrown;
+        final Throwable seen = new IncidentServiceVal(client, Duration.ofMinutes(1), new RecordingDelays())
+            .reportIncident(ALERT, constant(0), MS)
+            .handle((_, failure) -> failure)
+            .join();
+        if (thrown == plain) {
+          assertInstanceOf(CompletionException.class, seen, "attempt " + failuresFirst);
+          assertSame(plain, seen.getCause(), "attempt " + failuresFirst);
+        } else {
+          assertSame(wrapped, seen, "attempt " + failuresFirst);
+        }
+      }
+    }
+  }
+
+  /// (o) The one delegation a client without resolve support receives is covered the same way.
+  @Test
+  void aThrowFromAnUnsupportedResolveFailsTheFuture() {
+    final var thrown = new UnsupportedOperationException("thrown, not returned");
+    final var client = new StubClient(0, true);
+    client.supportsResolve = false;
+    client.thrownSynchronously = thrown;
+    final var future = IncidentService.createService(client).resolveIncident("key-o", constant(0), MS);
+    assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(1, client.calls.get());
+  }
+
+  /// (p) A null unit is refused before the first attempt of a report or a supported resolve,
+  /// whatever the first delay, a negative one that makes no attempt included. Unchecked, the
+  /// real delayed executor threw for a positive first delay only after the client had been
+  /// called, and a caller that caught that and reported again sent the alert twice.
+  @Test
+  void aNullUnitIsRefusedBeforeTheFirstAttempt() {
+    for (final long firstDelay : new long[]{-1, 0, 5}) {
+      final var client = new StubClient(0, true);
+      final var service = new IncidentServiceVal(client, Duration.ofMinutes(1), new RecordingDelays());
+      final var report = assertThrows(NullPointerException.class,
+          () -> service.reportIncident(ALERT, constant(firstDelay), null));
+      assertEquals("timeUnit", report.getMessage());
+      final var resolve = assertThrows(NullPointerException.class,
+          () -> service.resolveIncident("key-p", constant(firstDelay), null));
+      assertEquals("timeUnit", resolve.getMessage());
+      assertEquals(0, client.calls.get());
+    }
+  }
+
   /// A second delayed-executor seam: records each request when work is submitted to it and
   /// queues the work instead of running it, so a test can look at the returned future before
   /// the delayed attempt runs. A task that throws is dropped, as a pool thread would drop it,

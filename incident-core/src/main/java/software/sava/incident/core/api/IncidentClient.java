@@ -10,6 +10,10 @@ import java.util.concurrent.CompletableFuture;
 /// adapter from its native client.
 public interface IncidentClient extends HttpApiClient {
 
+  /// Reports `alert`. A failed request arrives through the returned future. An implementation
+  /// may also refuse an alert by throwing before any request is made, as PagerDuty's adapter
+  /// does for a request body over its size limit; [IncidentService] turns such a throw into a
+  /// failed future, so a caller that reports through it handles one path.
   CompletableFuture<IncidentResponse> reportIncident(final IncidentAlert alert);
 
   /// Whether [#resolveIncident(String)] is supported. Providers without a programmatic

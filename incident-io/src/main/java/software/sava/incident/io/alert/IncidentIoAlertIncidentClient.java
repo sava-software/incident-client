@@ -92,7 +92,9 @@ public final class IncidentIoAlertIncidentClient implements IncidentClient {
   /// A null or blank key is a caller error, not a failed delivery: it is thrown before
   /// anything is sent rather than failing the returned future, so a retrying caller such as
   /// [software.sava.incident.core.api.IncidentService] does not retry it as a transport
-  /// failure.
+  /// failure. Through the service a blank key ends the call with that exception, through the
+  /// future it returns; a null key never reaches this client, since the service returns null
+  /// for it.
   ///
   /// @throws NullPointerException     if `key` is null
   /// @throws IllegalArgumentException if `key` is blank

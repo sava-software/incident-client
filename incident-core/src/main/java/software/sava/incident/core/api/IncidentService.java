@@ -21,6 +21,17 @@ import java.util.function.LongUnaryOperator;
 /// an upstream stage wrapped it in), else its cause when that is a [RuntimeException], else a
 /// [RuntimeException] wrapping the cause, or the failure itself when it has none.
 ///
+/// A client that throws a [RuntimeException] from its `reportIncident` or `resolveIncident`,
+/// where it should return a failed future, ends the call through the returned future as
+/// well, on any attempt: the future fails with what was thrown, and a throw is never retried.
+/// PagerDuty's adapter refuses an alert whose request body is over its size limit that way.
+/// What the service evaluates before the first attempt of a report or a supported resolve
+/// still throws from the call itself: a null alert, retry-delay function or unit, the
+/// function's value for attempt 0, and the client's `maxKeyLength()` and
+/// `supportsResolve()`. So does a client that returns null where a future is due, or that
+/// throws an [Error], on the first attempt; on a later attempt either one fails the returned
+/// future.
+///
 /// A provider that asks for a wait before the next attempt
 /// ([IncidentClientException#retryAfter()], such as a 429's `Retry-After`) has it waited
 /// out, rounded up to the call's unit, before the next attempt: whatever part of it the

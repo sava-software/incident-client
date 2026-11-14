@@ -240,7 +240,10 @@ by default (`IncidentService.DEFAULT_MAX_RETRY_AFTER`); a longer wait is not ser
 ends with the provider's failure after the failed attempt's own retry delay, whatever the
 retry count, so an alert is never held for an
 hour in silence and the caller can fall back. `IncidentService.createService(incidentClient,
-maxRetryAfter)` sets another limit, and `Duration.ZERO` refuses every such wait.
+maxRetryAfter)` sets another limit, and `Duration.ZERO` refuses every such wait. A client
+that throws where it should return a failed future, as the PagerDuty adapter does for a
+request body over its size limit, fails the future the service returns, so a refusal by
+the client arrives the way a failed request does.
 
 The incident.io adapter maps `IncidentSeverity` values onto workspace severity ids
 supplied at build time, and has no programmatic resolve: `supportsResolve()` returns

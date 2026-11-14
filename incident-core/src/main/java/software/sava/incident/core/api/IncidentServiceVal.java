@@ -3,6 +3,7 @@ package software.sava.incident.core.api;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -116,6 +117,8 @@ record IncidentServiceVal(IncidentClient client,
                                                     final Supplier<String> context,
                                                     final LongUnaryOperator retryDelayFn,
                                                     final TimeUnit timeUnit) {
+    // a delay is served in it: refused here, not after the first attempt was made
+    requireNonNull(timeUnit, "timeUnit");
     final long retryDelay = retryDelayFn.applyAsLong(0);
     if (retryDelay < 0) {
       return null;
@@ -124,14 +127,25 @@ record IncidentServiceVal(IncidentClient client,
   }
 
   /// Makes attempt `retry` at once; if it fails, its handler runs after `retryDelay`, the
-  /// retry-delay function's value for this attempt, already evaluated.
+  /// retry-delay function's value for this attempt, already evaluated. A client that throws
+  /// a [RuntimeException] where it should return a failed future ends the call with what it
+  /// threw, through the returned future, on the first attempt as on a later one: it is
+  /// neither logged nor retried, no delay is served, and a dependent stage receives it in a
+  /// [CompletionException] either way.
   private CompletableFuture<IncidentResponse> attempt(final Supplier<CompletableFuture<IncidentResponse>> call,
                                                       final Supplier<String> context,
                                                       final int retry,
                                                       final long retryDelay,
                                                       final LongUnaryOperator retryDelayFn,
                                                       final TimeUnit timeUnit) {
-    final var responseFuture = call.get();
+    final CompletableFuture<IncidentResponse> responseFuture;
+    try {
+      responseFuture = call.get();
+    } catch (final RuntimeException thrown) {
+      // the shape a dependent stage sees for every other failure of the call
+      return CompletableFuture.failedFuture(
+          thrown instanceof CompletionException ? thrown : new CompletionException(thrown));
+    }
     final Function<Throwable, CompletableFuture<IncidentResponse>> exceptionally = throwable -> {
       final int numFailures = retry + 1;
       final var serverWait = serverWait(throwable);
@@ -193,7 +207,11 @@ record IncidentServiceVal(IncidentClient client,
     // the key as the provider knows it: shortened the same way the report was
     final var resolveKey = IncidentClient.boundKey(key, client.maxKeyLength());
     if (!client.supportsResolve()) {
-      return client.resolveIncident(resolveKey);
+      try {
+        return client.resolveIncident(resolveKey);
+      } catch (final RuntimeException thrown) {
+        return CompletableFuture.failedFuture(thrown);
+      }
     }
     final boolean sentAsIs = resolveKey.equals(key);
     return retry(
