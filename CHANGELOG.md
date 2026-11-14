@@ -1,5 +1,37 @@
 # Changelog
 
+## [25.6.0](https://github.com/sava-software/incident-client/compare/25.5.3...25.6.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **incident-webhook:** the `TelegramTextFormat` record gains a second component, `messageThreadId`. A record pattern that deconstructs it with one component no longer compiles. The one-argument constructor, `chatId()` and code already compiled against the old shape are unaffected. A Properties config whose `<prefix>messageThreadId` key was ignored before is now validated for every provider and for a composing factory: a value that is not blank and not ASCII digits from 0 to 2147483647 fails the parse.
+* **incident-pagerduty:** `PagerDutyEventClient.Builder.authToken`, `PagerDutyConfig.authToken()` and the `authToken` config key are removed. A JSON config that still carries `authToken` fails to parse with "Unknown HttpApiClientConfig field authToken"; the Properties form ignores the key.
+
+### Features
+
+* **incident-core:** read the HTTP-date form of Retry-After ([7a660bb](https://github.com/sava-software/incident-client/commit/7a660bb164a3e4a3995ff6284c59a38e33270096))
+* **incident-core:** wait out a provider's Retry-After before the next attempt ([a488500](https://github.com/sava-software/incident-client/commit/a48850001caed133151de8a52c2c4891e507c249))
+* **incident-io:** add an alert-source client that can resolve what it reports ([a1d4d2c](https://github.com/sava-software/incident-client/commit/a1d4d2cd60fa6f82727d6783a718613611b66f33))
+* **incident-webhook:** disable link previews on Telegram alerts ([1e9cc5a](https://github.com/sava-software/incident-client/commit/1e9cc5af35349bb8e5031029e1851f90798baa5b))
+* **incident-webhook:** let a WebhookFormat read the wait from a failed response body ([3455ffe](https://github.com/sava-software/incident-client/commit/3455ffeb0769e4759f906179f1ec4e4e2091c16e))
+* **incident-webhook:** read the Bot API's retry_after from a failed response body ([cfcb52c](https://github.com/sava-software/incident-client/commit/cfcb52ca5aa230aaf9ea2df9c1d9b83ed04b8591))
+* **incident-webhook:** send Telegram alerts to a forum topic ([27229fe](https://github.com/sava-software/incident-client/commit/27229fe05356f353a8c0d3cc59ef5d5bec02c2e1))
+
+
+### Bug Fixes
+
+* **build:** upgrade to Gradle 9.9 and scope plugin repositories ([14c823f](https://github.com/sava-software/incident-client/commit/14c823f13c5e4be427afd7a07e0112e14d7d84ca))
+* **deps:** bump solanaBOMVersion to 25.30.49 for sava-rpc's typed HTTP failures ([fa40c55](https://github.com/sava-software/incident-client/commit/fa40c55849841287ce4b8caf1842a45399199be0))
+* **incident-core:** fail with the last attempt's error when retries run out ([080dcf3](https://github.com/sava-software/incident-client/commit/080dcf3193b805374435027174200db66a488bf6))
+* **incident-core:** refuse an HTTP-date before the year 1900 ([eb175af](https://github.com/sava-software/incident-client/commit/eb175af01aa6fc0aab2a9310131b4119e0c4a190))
+* **incident-pagerduty:** create builders handed to the client and refuse blank link and image URLs ([e4001e9](https://github.com/sava-software/incident-client/commit/e4001e976f7bd3429edd52b1ac43a430d1f4b635))
+* **incident-pagerduty:** do not retry a 2xx response whose body cannot be parsed ([f6e3812](https://github.com/sava-software/incident-client/commit/f6e3812d481ef87036ce17b970e3b850dc3d2914))
+* **incident-pagerduty:** fail with the last attempt's error when retries run out ([f9a124c](https://github.com/sava-software/incident-client/commit/f9a124c82962f421449fb58a3c3d91cefedfa7e0))
+* **incident-pagerduty:** refuse a request body over the 512 KB the Events API accepts ([2bcddcd](https://github.com/sava-software/incident-client/commit/2bcddcd106a50b5d3f4057cfb39b219bb87c76bd))
+* **incident-pagerduty:** stop sending a REST API token to the Events API ([baa8e9a](https://github.com/sava-software/incident-client/commit/baa8e9ad616ed8e7bfbbd66fcd7ac5a88518e5db))
+* **incident-webhook:** keep a surrogate pair whole when Telegram text is truncated ([d1938ca](https://github.com/sava-software/incident-client/commit/d1938ca014ef5aa112e2f4e92e0e66018a47c3d3))
+
 ## [25.5.3](https://github.com/sava-software/incident-client/compare/25.5.2...25.5.3) (2026-10-29)
 
 
