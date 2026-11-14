@@ -1224,6 +1224,21 @@ final class IncidentServiceTests {
     }
   }
 
+  /// (i) A wait over the limit on a later attempt is refused the same way: the call ends with
+  /// that attempt's failure once its own delay has passed, and no third attempt is made.
+  @Test
+  void aWaitOverTheLimitOnALaterAttemptIsNotServed() {
+    final var refused = rateLimited("31");
+    final var client = new StubClient(Integer.MAX_VALUE, true);
+    client.failureFactory = inTurn(new TestClientException(true), refused);
+    final var delays = new RecordingDelays();
+    final var future = new IncidentServiceVal(client, Duration.ofSeconds(30), delays)
+        .reportIncident(ALERT, n -> 5 + 2 * n, MS);
+    assertSame(refused, assertThrows(CompletionException.class, future::join).getCause());
+    assertEquals(ms(5, 7), delays.requests, "attempt 0's delay, then only attempt 1's own");
+    assertEquals(2, client.calls.get());
+  }
+
   /// (i) The limit holds through every overload, whatever the retry count, and on resolve.
   @Test
   void theLimitHoldsThroughEveryOverload() {
