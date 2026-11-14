@@ -105,6 +105,26 @@ final class TriggerJsonTests {
         triggerJson(' ' + NAME + ' ', ' ' + URL + ' '));
   }
 
+  /// A line break in an envelope field is sent as given, escaped; only the payload's
+  /// single-line fields drop it. A dedup key must be the same string on trigger, acknowledge
+  /// and resolve, so the envelope never rewrites one.
+  @Test
+  void aLineBreakInAnEnvelopeFieldIsEscapedNotRemoved() {
+    final var event = PagerDutyEventPayload.build()
+        .dedupKey("dk\n1\r2")
+        .summary("trigger\nsum\rmary")
+        .source("trigger-source")
+        .severity(PagerDutySeverity.warning)
+        .timestamp(TIMESTAMP)
+        .create();
+    assertEquals("""
+            {"event_action":"trigger","routing_key":"rk\\n1","dedup_key":"dk\\n1\\r2",\
+            "payload":{"summary":"triggersummary","source":"trigger-source","severity":"warning",\
+            "timestamp":"2018-08-01T02:03:04Z"},"client":"cl\\nient","client_url":"https://u.example/\\r\\n"}""",
+        PagerDutyEventClientImpl.triggerJson("rk\n1", event, "cl\nient", "https://u.example/\r\n")
+    );
+  }
+
   @Test
   void callerStringsAreEscaped() {
     final var event = PagerDutyEventPayload.build()

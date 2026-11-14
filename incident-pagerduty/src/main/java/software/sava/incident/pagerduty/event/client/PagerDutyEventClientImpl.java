@@ -162,11 +162,21 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
                                                                 final String eventAction) {
     Objects.requireNonNull(routingKey, "Routing key is a required field.");
     Objects.requireNonNull(dedupKey, "De-duplication key is a required field.");
-    final var json = String.format("""
+    return postEvent(eventUri, eventActionJson(routingKey, dedupKey, eventAction));
+  }
+
+  /// The request body of an acknowledge or a resolve. Package-private and pure so it can be
+  /// pinned without a transport. Both keys are escaped and sent as given, a line break
+  /// included, the way the trigger envelope sends them: a key that was rewritten here would
+  /// no longer name the alert it was triggered with.
+  ///
+  /// @param eventAction `acknowledge` or `resolve`; not caller-supplied, so not escaped
+  /// @return the JSON request body
+  static String eventActionJson(final String routingKey, final String dedupKey, final String eventAction) {
+    return String.format("""
             {"routing_key":"%s","dedup_key":"%s","event_action":"%s"}""",
         escapeJson(routingKey), escapeJson(dedupKey), eventAction
     );
-    return postEvent(eventUri, json);
   }
 
   @Override

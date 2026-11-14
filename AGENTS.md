@@ -98,9 +98,14 @@ paths in `AGENTS.local.md`, and `git pull` an existing clone before comparing.
 Serialization is hand-rolled (no reflection, no databind). The rules that keep it correct:
 
 - **Every caller-supplied string must be escaped** on its way into a JSON document —
-  values, and map keys too. Use `JsonUtil.escapeJson` (full RFC 8259) in `incident-io`,
-  and `JsonUtil.escapeJsonRemoveNewLines` in `incident-pagerduty` (PagerDuty string
-  fields are single-line by contract: LF/CR are removed rather than escaped).
+  values, and map keys too. Use `JsonUtil.escapeJson` (full RFC 8259) in `incident-io`.
+  In `incident-pagerduty` two rules apply. The payload's own string fields (`summary`,
+  `source` and the optional ones) and its links and images use
+  `JsonUtil.escapeJsonRemoveNewLines`: they are single-line fields, so LF/CR are removed
+  rather than escaped. `custom_details` keys and values and the envelope (`routing_key`,
+  `dedup_key`, `client`, `client_url`) use `escapeJson` and are sent as given: details may
+  run over several lines, and a key must be the same string on trigger, acknowledge and
+  resolve.
 - **Timestamps** serialize through `OffsetDateTime` (RFC 3339). Never format a
   `ZonedDateTime` directly — region zones render an invalid `[Area/City]` suffix.
 - PagerDuty field limits enforced client-side: `summary` truncates at 1024 chars;
