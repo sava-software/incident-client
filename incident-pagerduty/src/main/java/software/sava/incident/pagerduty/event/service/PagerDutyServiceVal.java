@@ -8,6 +8,7 @@ import software.sava.incident.pagerduty.exceptions.PagerDutyClientException;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.LongUnaryOperator;
@@ -96,7 +97,12 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
     if (retryDelay < 0) {
       return null;
     }
-    final var responseFuture = client.resolveEvent(dedupeKey);
+    final CompletableFuture<PagerDutyEventResponse> responseFuture;
+    try {
+      responseFuture = client.resolveEvent(dedupeKey);
+    } catch (final RuntimeException thrown) {
+      return thrownByTheClient(thrown);
+    }
     final Function<Throwable, CompletableFuture<PagerDutyEventResponse>> exceptionally = throwable -> {
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to resolve event with dedupe key '%s'.", dedupeKey));
@@ -114,6 +120,17 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
     } else {
       return responseFuture.exceptionallyCompose(exceptionally);
     }
+  }
+
+  /// A client that throws a [RuntimeException] where it should return a failed future, as the
+  /// event client does for a null or failing payload and for a request body over its size
+  /// limit, ends the call with what it threw, through the returned future, on the first
+  /// attempt as on a later one: it is neither logged nor retried, and a dependent stage
+  /// receives it in a [CompletionException] either way, the shape of every other failure of
+  /// the call.
+  private static CompletableFuture<PagerDutyEventResponse> thrownByTheClient(final RuntimeException thrown) {
+    return CompletableFuture.failedFuture(
+        thrown instanceof CompletionException ? thrown : new CompletionException(thrown));
   }
 
   private static boolean canBeRetried(final Throwable throwable) {
@@ -179,7 +196,12 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
     if (retryDelay < 0) {
       return null;
     }
-    final var responseFuture = client.triggerDefaultRouteEvent(payload);
+    final CompletableFuture<PagerDutyEventResponse> responseFuture;
+    try {
+      responseFuture = client.triggerDefaultRouteEvent(payload);
+    } catch (final RuntimeException thrown) {
+      return thrownByTheClient(thrown);
+    }
     final Function<Throwable, CompletableFuture<PagerDutyEventResponse>> exceptionally = throwable -> {
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to trigger event:%n  %s", payload));
@@ -242,7 +264,12 @@ record PagerDutyServiceVal(PagerDutyEventClient client,
     if (retryDelay < 0) {
       return null;
     }
-    final var responseFuture = client.defaultRouteChangeEvent(payload);
+    final CompletableFuture<PagerDutyEventResponse> responseFuture;
+    try {
+      responseFuture = client.defaultRouteChangeEvent(payload);
+    } catch (final RuntimeException thrown) {
+      return thrownByTheClient(thrown);
+    }
     final Function<Throwable, CompletableFuture<PagerDutyEventResponse>> exceptionally = throwable -> {
       final int numFailures = retry + 1;
       logFailure(throwable, numFailures, retryDelay, timeUnit, String.format("to send change event:%n  %s", payload));

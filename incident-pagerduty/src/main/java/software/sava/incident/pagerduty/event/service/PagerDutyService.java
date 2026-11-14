@@ -10,6 +10,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongUnaryOperator;
 
+/// Retries trigger, change and resolve events sent through a [PagerDutyEventClient].
+///
+/// A [RuntimeException] the client throws where it should return a failed future, as it does
+/// for a null or failing payload and for a request body over
+/// [PagerDutyEventClient#MAX_REQUEST_BODY_BYTES], fails the returned future on any attempt and
+/// is never retried, so a caller that sends through this service handles failures in one
+/// place.
 public interface PagerDutyService {
 
   static Builder build() {

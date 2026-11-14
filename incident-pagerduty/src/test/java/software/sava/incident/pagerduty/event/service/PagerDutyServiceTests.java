@@ -211,6 +211,7 @@ final class PagerDutyServiceTests {
     private String lastClientName;
     private String lastClientUrl;
     private String lastDedupKey;
+    private RuntimeException thrownSynchronously;
 
     private StubClient(final int failures, final boolean canBeRetried) {
       this.failures = failures;
@@ -221,6 +222,9 @@ final class PagerDutyServiceTests {
       if (calls.incrementAndGet() <= failures) {
         final var exception = failureFactory == null ? new TestClientException(canBeRetried) : failureFactory.get();
         return CompletableFuture.failedFuture(wrapFailures ? new CompletionException(exception) : exception);
+      }
+      if (thrownSynchronously != null) {
+        throw thrownSynchronously;
       }
       return CompletableFuture.completedFuture(response(dedupKey));
     }
@@ -284,6 +288,68 @@ final class PagerDutyServiceTests {
 
   private static PagerDutyService service(final StubClient client) {
     return PagerDutyService.build().client(client).eventPrototype(EVENT).create();
+  }
+
+  private static final List<Function<PagerDutyService, CompletableFuture<PagerDutyEventResponse>>> RETRIED_CALLS = List.of(
+      service -> service.triggerEvent(EVENT, 3, 0, 0, TimeUnit.MILLISECONDS),
+      service -> service.changeEvent(CHANGE, 3, 0, 0, TimeUnit.MILLISECONDS),
+      service -> service.resolveEvent("dedup-key", 3, 0, 0, TimeUnit.MILLISECONDS));
+
+  /// A client that throws where it should return a failed future ends the call through the
+  /// returned future on the first attempt: the call itself does not throw, and the throw is
+  /// not retried even when it says it can be. Trigger, change and resolve alike.
+  @Test
+  void aThrowOnTheFirstAttemptFailsTheFuture() {
+    for (final var thrown : List.of(
+        new IllegalArgumentException("refused before any request"),
+        new TestClientException(true))) {
+      for (final var call : RETRIED_CALLS) {
+        final var client = new StubClient(0, true);
+        client.thrownSynchronously = thrown;
+        final var future = call.apply(service(client));
+        assertTrue(future.isDone());
+        assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+        assertEquals(1, client.calls.get());
+      }
+    }
+  }
+
+  /// A dependent stage receives a throw in the same shape on the first attempt as on a later
+  /// one, the shape of every other failure of the call: a CompletionException holding what
+  /// was thrown, and a thrown CompletionException as it is, not wrapped again.
+  @Test
+  void aThrowReachesADependentStageTheSameWayOnEveryAttempt() {
+    final var plain = new IllegalArgumentException("refused before any request");
+    final var wrapped = new CompletionException(new IllegalStateException("thrown already wrapped"));
+    for (final int failuresFirst : new int[]{0, 1}) {
+      for (final var thrown : List.of(plain, wrapped)) {
+        for (final var call : RETRIED_CALLS) {
+          final var client = new StubClient(failuresFirst, true);
+          client.thrownSynchronously = thrown;
+          final Throwable seen = call.apply(service(client)).handle((_, failure) -> failure).join();
+          if (thrown == plain) {
+            assertInstanceOf(CompletionException.class, seen, "attempt " + failuresFirst);
+            assertSame(plain, seen.getCause(), "attempt " + failuresFirst);
+          } else {
+            assertSame(wrapped, seen, "attempt " + failuresFirst);
+          }
+        }
+      }
+    }
+  }
+
+  /// A throw on a later attempt ends the call the same way, as it did before the first
+  /// attempt was guarded: pinned so the two stay alike.
+  @Test
+  void aThrowOnALaterAttemptFailsTheFuture() {
+    final var thrown = new TestClientException(true);
+    for (final var call : RETRIED_CALLS) {
+      final var client = new StubClient(1, true);
+      client.thrownSynchronously = thrown;
+      final var future = call.apply(service(client));
+      assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
+      assertEquals(2, client.calls.get());
+    }
   }
 
   @Test
