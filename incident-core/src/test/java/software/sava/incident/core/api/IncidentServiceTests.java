@@ -1189,10 +1189,11 @@ final class IncidentServiceTests {
     assertEquals(ms(7, 3), delays.requests);
   }
 
-  /// (i) A wait equal to the limit is served; one over it, by a second or a nanosecond, ends
-  /// the call at once with the provider's exception, no further attempt and no wait.
+  /// (i) A wait equal to the limit is served; one over it, by a second or a nanosecond, is
+  /// not: the call ends with the provider's exception after the failed attempt's own delay,
+  /// with no further attempt.
   @Test
-  void aWaitOverTheLimitFailsAtOnce() {
+  void aWaitOverTheLimitIsNotServed() {
     final var limit = Duration.ofSeconds(30);
 
     final var atLimit = new StubClient(1, true);
