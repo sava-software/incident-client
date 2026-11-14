@@ -42,11 +42,3 @@ hardening {
     targetTests = "software.sava.incident.core.*Test*"
   }
 }
-
-//dependencyAnalysis {
-//  issues {
-//    onAny {
-//      severity("ignore")
-//    }
-//  }
-//}

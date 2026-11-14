@@ -78,11 +78,3 @@ hardening {
     seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/payload")
   }
 }
-
-//dependencyAnalysis {
-//  issues {
-//    onAny {
-//      severity("ignore")
-//    }
-//  }
-//}

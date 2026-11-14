@@ -153,7 +153,9 @@ config and format. No timeout records are tracked in this repository today.
 **Ownership:** CI runs `check` only. `:<module>:hardeningCertify` plus an explicit local
 `:<module>:fuzzAll -PmaxFuzzTime=<seconds> -PmaxParallelFuzzTargets=<count>` campaign are
 release-checklist items, run locally with both budgets recorded; `verificationKeyStatus`
-from the root is another release-checklist item (Build notes, below). Run
+from the root is another release-checklist item (Build notes, below), and so is
+`./gradlew -PdependencyAudit checkModuleDirectivesScope`, run before a release pull request
+is merged, since no CI job passes the property (Build notes, below). Run
 `:<module>:mutationOwnershipAudit` with the pre-push gate, once per reviewed unpushed
 range, whenever the production-class inventory changes or a suite's target/exclusion rules
 change.
@@ -275,6 +277,18 @@ instruction, not a red build.
 
 - Gradle resolves the sava-build plugins from GitHub Packages only, which needs the
   `savaGithubPackagesUsername` / `savaGithubPackagesPassword` Gradle properties.
+- sava-build does not apply the dependency-analysis plugin (since 21.8.8), so `check` has
+  no module-directive scope check: nothing says that a `requires` should be
+  `requires transitive`, or that a module requires what it never uses. `settings.gradle.kts`
+  puts the plugin on the settings classpath only under `-PdependencyAudit` (any value turns
+  it on, `=false` included). That brings `checkModuleDirectivesScope` back in every module,
+  makes `check` depend on it, and adds `buildHealth`. Never set the property in
+  `gradle.properties` or in a workflow that publishes: it would load the plugin's whole
+  chain into every build, release builds included. The verification policy keeps that
+  chain's rules for the audit run, so a from-scratch write of the policy runs with the
+  property set. `incident-examples` configures the plugin's extension through
+  `pluginManager.withPlugin`, since a typed `dependencyAnalysis { }` block does not compile
+  without the plugin. sava-build's README, "Dependency analysis", is the reference.
 - This repo pins its toolchain with `javaVersion` in `gradle/sava.properties`, and
   `settings.gradle.kts` applies sava-build's `software.sava.build.feature.jdk-provisioning`
   settings plugin; how that plugin resolves or provisions a JDK is the plugin's to
@@ -287,15 +301,19 @@ instruction, not a red build.
   procedure are sava-build's README, "Verifying sava artifacts". Check a dependency or
   policy change with
   `./gradlew --no-daemon --no-configuration-cache check resolveVerificationTools` (a reused
-  configuration-cache entry resolves nothing and so verifies nothing); validate a new BOM
+  configuration-cache entry resolves nothing and so verifies nothing), and once more with
+  `-PdependencyAudit checkModuleDirectivesScope`, since only that run puts the
+  dependency-analysis chain on the settings classpath and so meets the rules the policy
+  keeps for it; validate a new BOM
   or parent POM once more from an empty `GRADLE_USER_HOME` that holds only the
   `org.gradle.java.*` lines of `~/.gradle/gradle.properties`, with the GitHub Packages
   credentials passed as `ORG_GRADLE_PROJECT_savaGithubPackages*` environment variables,
   since a warm cache hides metadata a cold one fetches. No IDE sync is owed after a policy
   change, and a session does not ask for one. Only an IntelliJ sync exercises the
   `gradle:gradle` rule, for the Gradle sources zip that any sync asks for, so a trim keeps
-  it, and keeps the `org.jetbrains.kotlin` rule group-wide: the command line meets it, and
-  a sync also reads it for the sources of the Kotlin libraries Gradle embeds. The
+  it, and keeps the `org.jetbrains.kotlin` rule group-wide: on the command line only the
+  audit run (`-PdependencyAudit`) meets it, a plain build no longer does, and a sync also
+  reads it for the sources of the Kotlin libraries Gradle embeds. The
   `org.apache.groovy` rule names `groovy-bom` alone, which the command line meets, since no
   build here compiles against the Gradle API; a change that adds such a build widens the
   rule back to the group, since a sync then asks for Groovy's sources and module. A session
