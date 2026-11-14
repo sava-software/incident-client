@@ -1,5 +1,6 @@
 package software.sava.incident.io.alert;
 
+import software.sava.incident.io.TestEndpoint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +69,7 @@ final class IncidentIoAlertEventClientWireTests {
     server.setExecutor(ForkJoinPool.commonPool());
     server.start();
     final var address = server.getAddress();
-    return new Wire("http://" + address.getHostString() + ':' + address.getPort() + "/v2/alert_events/http/src-1",
+    return new Wire(TestEndpoint.http(address, "/v2/alert_events/http/src-1").toString(),
         method, path, headers, body);
   }
 

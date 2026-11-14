@@ -51,7 +51,7 @@ final class PagerDutyEventClientHandoffTests {
     server.start();
     final var address = server.getAddress();
     return PagerDutyEventClient.clientBuilder()
-        .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+        .endpoint(TestEndpoint.http(address).toString())
         .defaultClientName("handoff-client")
         .defaultRoutingKey("handoff-rk")
         .createClient();

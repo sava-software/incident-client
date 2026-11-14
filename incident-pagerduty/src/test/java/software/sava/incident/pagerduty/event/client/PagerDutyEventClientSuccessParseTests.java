@@ -81,7 +81,7 @@ final class PagerDutyEventClientSuccessParseTests {
     server.start();
     final var address = server.getAddress();
     return PagerDutyEventClient.clientBuilder()
-        .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+        .endpoint(TestEndpoint.http(address).toString())
         .defaultRoutingKey("parse-rk")
         .testResponse(testResponse)
         .createClient();

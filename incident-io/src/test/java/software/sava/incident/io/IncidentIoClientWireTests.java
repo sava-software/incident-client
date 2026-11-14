@@ -56,7 +56,7 @@ final class IncidentIoClientWireTests {
     server.setExecutor(ForkJoinPool.commonPool());
     server.start();
     final var address = server.getAddress();
-    return new Wire("http://" + address.getHostString() + ':' + address.getPort() + "/v2/incidents",
+    return new Wire(TestEndpoint.http(address, "/v2/incidents").toString(),
         headers, body);
   }
 

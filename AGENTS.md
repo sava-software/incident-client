@@ -198,10 +198,11 @@ Conventions to preserve:
   port 0 a port that another process's loopback listener already holds, and a connection
   to `127.0.0.1` then reaches that listener: the test fails at once, or waits out the
   client's request timeout, which PIT reports as `TIMED_OUT`. A loopback bind cannot be
-  captured that way. The PagerDuty harness builds the endpoint with `ClientTests.endpoint`,
-  which brackets an IPv6 literal; the other wire tests concatenate `getHostString()`, which
-  is right for the default IPv4 loopback and fails, loudly, when the JVM is told to prefer
-  IPv6.
+  captured that way. Every wire test builds its endpoint with its module's test helper
+  `TestEndpoint.http`, which writes the bound address as a literal and brackets an IPv6
+  one; a concatenation of `getHostString()` is right for the default IPv4 loopback and
+  fails, loudly, when the JVM is told to prefer IPv6. The helper's name carries `Test` so
+  that a suite's `*Test*` exclusion keeps PIT off it.
 - Our copy-on-write builder acceptances (`# copy-on-write` / `# defensive-copy` in
   `api-accepted.csv` and `payload-accepted.csv`) argue only the content-equal sibling of
   each `size() > 1 ? copy : as-is` ternary; the mutable-escape direction is killed by the

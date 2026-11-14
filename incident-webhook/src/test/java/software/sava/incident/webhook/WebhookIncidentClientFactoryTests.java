@@ -192,7 +192,7 @@ final class WebhookIncidentClientFactoryTests {
     server.setExecutor(ForkJoinPool.commonPool());
     server.start();
     try {
-      final var endpoint = "http://" + server.getAddress().getHostString() + ':' + server.getAddress().getPort() + "/hook";
+      final var endpoint = TestEndpoint.http(server.getAddress(), "/hook").toString();
       final var client = IncidentClients.createClient(JsonIterator.parse(String.format("""
           {"provider":"slack","config":{"endpoint":"%s","bearerToken":"token-1","headers":{"X-From-Config":"1"}}}""", endpoint)));
 

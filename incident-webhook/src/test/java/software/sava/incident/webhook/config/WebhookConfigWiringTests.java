@@ -1,5 +1,6 @@
 package software.sava.incident.webhook.config;
 
+import software.sava.incident.webhook.TestEndpoint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import software.sava.incident.webhook.WebhookClient;
@@ -36,7 +37,7 @@ final class WebhookConfigWiringTests {
     });
     server.setExecutor(ForkJoinPool.commonPool());
     server.start();
-    final var endpoint = "http://" + server.getAddress().getHostString() + ':' + server.getAddress().getPort() + "/hook";
+    final var endpoint = TestEndpoint.http(server.getAddress(), "/hook").toString();
     return new WireCapture(server, endpoint, requestHeaders);
   }
 

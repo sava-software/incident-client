@@ -72,7 +72,7 @@ final class PagerDutyEventClientSizeLimitTests {
     server.start();
     final var address = server.getAddress();
     return PagerDutyEventClient.clientBuilder()
-        .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+        .endpoint(TestEndpoint.http(address).toString())
         .defaultRoutingKey("size-rk")
         .createClient();
   }

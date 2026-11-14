@@ -1,5 +1,6 @@
 package software.sava.incident.pagerduty.event.service;
 
+import software.sava.incident.pagerduty.event.client.TestEndpoint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -977,7 +978,7 @@ final class PagerDutyServiceTests {
     try {
       final var address = server.getAddress();
       final var client = PagerDutyEventClient.clientBuilder()
-          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .endpoint(TestEndpoint.http(address).toString())
           .defaultRoutingKey("retry-rk")
           .createClient();
       final var builder = PagerDutyEventPayload.build()
@@ -1021,7 +1022,7 @@ final class PagerDutyServiceTests {
     try {
       final var address = server.getAddress();
       final var client = PagerDutyEventClient.clientBuilder()
-          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .endpoint(TestEndpoint.http(address).toString())
           .defaultRoutingKey("retry-rk")
           .createClient();
       final var builder = PagerDutyChangeEventPayload.build().summary("s");
@@ -1059,7 +1060,7 @@ final class PagerDutyServiceTests {
     try {
       final var address = server.getAddress();
       final var client = PagerDutyEventClient.clientBuilder()
-          .endpoint("http://" + address.getHostString() + ':' + address.getPort())
+          .endpoint(TestEndpoint.http(address).toString())
           .defaultRoutingKey("change-rk")
           .createClient();
       final var future = PagerDutyService.build().client(client).eventPrototype(EVENT).create()

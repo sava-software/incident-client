@@ -12,7 +12,7 @@ public interface EventClientTest extends ClientTest {
         // the address the server is bound to, as a literal: never localhost, which can
         // resolve to another address family and reach another process's listener on the
         // same port number
-        .endpoint(ClientTests.endpoint(address))
+        .endpoint(TestEndpoint.http(address))
         .defaultRoutingKey("routing-key-" + port)
         .createClient();
     test(client);

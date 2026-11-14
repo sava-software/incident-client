@@ -139,7 +139,7 @@ final class CustomProviderExtensionTests {
     server.start();
     try {
       final var client = WebhookClient.clientBuilder()
-          .endpoint("http://" + server.getAddress().getHostString() + ':' + server.getAddress().getPort() + "/hook")
+          .endpoint(TestEndpoint.http(server.getAddress(), "/hook").toString())
           .createClient()
           .incidentClient(new WaitingFormat());
       final var ex = assertThrows(CompletionException.class, () -> client.reportIncident(ALERT).join());

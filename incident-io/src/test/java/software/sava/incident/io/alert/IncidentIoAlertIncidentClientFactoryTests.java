@@ -1,5 +1,6 @@
 package software.sava.incident.io.alert;
 
+import software.sava.incident.io.TestEndpoint;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ final class IncidentIoAlertIncidentClientFactoryTests {
     server.setExecutor(ForkJoinPool.commonPool());
     server.start();
     final var address = server.getAddress();
-    return "http://" + address.getHostString() + ':' + address.getPort() + "/custom/alert-source";
+    return TestEndpoint.http(address, "/custom/alert-source").toString();
   }
 
   @AfterEach

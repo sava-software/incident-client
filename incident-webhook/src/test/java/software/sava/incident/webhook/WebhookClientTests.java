@@ -82,7 +82,7 @@ final class WebhookClientTests {
   }
 
   private static URI endpoint(final HttpServer server) {
-    return URI.create("http://" + server.getAddress().getHostString() + ':' + server.getAddress().getPort() + "/hook");
+    return TestEndpoint.http(server.getAddress(), "/hook");
   }
 
   @Test

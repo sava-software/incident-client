@@ -39,7 +39,7 @@ final class ClientTestRunner {
         }
       };
       harness.test(httpServer);
-      assertEquals(ClientTests.endpoint(bound), endpoint[0]);
+      assertEquals(TestEndpoint.http(bound), endpoint[0]);
     } finally {
       httpServer.stop(0);
     }
@@ -53,11 +53,11 @@ final class ClientTestRunner {
     final var v6 = new byte[16];
     v6[15] = 1;
     assertEquals(URI.create("http://127.0.0.1:50123"),
-        ClientTests.endpoint(new InetSocketAddress(InetAddress.getByAddress(v4), 50123)));
+        TestEndpoint.http(new InetSocketAddress(InetAddress.getByAddress(v4), 50123)));
     assertEquals(URI.create("http://[0:0:0:0:0:0:0:1]:50123"),
-        ClientTests.endpoint(new InetSocketAddress(InetAddress.getByAddress(v6), 50123)));
+        TestEndpoint.http(new InetSocketAddress(InetAddress.getByAddress(v6), 50123)));
     assertEquals(URI.create("http://127.0.0.1:50123"),
-        ClientTests.endpoint(new InetSocketAddress(InetAddress.getByAddress("localhost", v4), 50123)));
+        TestEndpoint.http(new InetSocketAddress(InetAddress.getByAddress("localhost", v4), 50123)));
   }
 
   @TestFactory
