@@ -55,8 +55,9 @@ provider can be swapped via configuration:
 - `IncidentService` — retrying wrapper over any `IncidentClient` (retry-delay function,
   max-retries / give-up-after variants). It waits out a provider's `retryAfter()` before
   the next attempt up to the service's limit (`DEFAULT_MAX_RETRY_AFTER`, one minute, or
-  `createService(client, maxRetryAfter)`); a longer wait fails the call at once with the
-  provider's exception. When the retry-delay function gives up, the call fails the same way,
+  `createService(client, maxRetryAfter)`); a longer wait is not served, and the call fails
+  with the provider's exception once the failed attempt's own delay has passed. When the
+  retry-delay function gives up, the call fails the same way,
   with the last attempt's failure.
 
 Adapters: `PagerDutyIncidentClient` (dedup-key based, `details` carried in

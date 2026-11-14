@@ -116,7 +116,7 @@ Optional objects read as null when missing or explicitly null. Unknown fields ar
 skipped, and a recognized field the parser cannot read raises `IncidentIoParseException`.
 Null metadata values and null stack-frame elements are rejected.
 `IncidentService` waits out `retryAfter()` before its next attempt, up to the service's
-limit, and past it fails the call at once with this exception.
+limit; past it the service makes no further attempt and fails the call with this exception.
 
 ## Configuration
 

@@ -25,8 +25,10 @@ import java.util.function.LongUnaryOperator;
 /// ([IncidentClientException#retryAfter()], such as a 429's `Retry-After`) has it waited
 /// out, rounded up to the call's unit, before the next attempt: whatever part of it the
 /// retry-delay function's value did not already cover. A wait longer than the service's
-/// limit is not served: the call ends at once with the provider's failure, whatever the
-/// retry count, so the caller can fall back rather than hold an alert. The limit belongs to
+/// limit is not served: no further attempt is made, whatever the retry count, and the call
+/// ends with the provider's failure when that failure is handled, which is once the failed
+/// attempt's own delay has been served, so the caller can fall back rather than hold an
+/// alert. The limit belongs to
 /// the service and applies to every overload; it is [#DEFAULT_MAX_RETRY_AFTER] for
 /// [#createService(IncidentClient)], and set with
 /// [#createService(IncidentClient, Duration)]. The `giveUpAfter` overloads only derive a
@@ -58,8 +60,8 @@ public interface IncidentService {
   /// Refuses a client whose [IncidentClient#maxKeyLength()] is under the 64-character digest.
   ///
   /// @param maxRetryAfter the longest provider-requested wait this service serves before its
-  ///                      next attempt; a longer one ends the call at once with the provider's
-  ///                      failure. [Duration#ZERO] refuses every wait.
+  ///                      next attempt; a longer one is not served, and the call ends with
+  ///                      the provider's failure. [Duration#ZERO] refuses every wait.
   /// @throws NullPointerException     if `maxRetryAfter` is null
   /// @throws IllegalArgumentException if `maxRetryAfter` is negative
   static IncidentService createService(final IncidentClient client, final Duration maxRetryAfter) {
