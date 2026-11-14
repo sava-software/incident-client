@@ -60,7 +60,7 @@ grouped by the principle that makes it equivalent.
   carrying one.
 
   Load is not the only thing that produces such an outcome. PIT 1.30.2's control channel
-  is open to the port capture described under the open items below: its main process
+  is open to the port capture described under the reviewed items below: its main process
   binds port 0 on the wildcard address (`SocketFinder`), and each minion connects to
   `localhost` and gives up after a read timeout of 10 seconds (coverage) or 20 (mutation).
   Reduced to those two calls and run against one held loopback port, the minion's read
@@ -69,8 +69,8 @@ grouped by the principle that makes it equivalent.
   started, at a load average under 14; the next history-free gate was clean. Which port
   that run had was not recorded, so this too is a fit and not a capture. Nothing in this
   repository can change PIT's sockets.
-- **Open until reviewed, `adapter`: one `TIMED_OUT`, with a demonstrated mechanism that
-  fits it.** On 2026-11-12 a single observation reported `TIMED_OUT` for the `clientUrl`
+- **Reviewed 2026-11-14, `adapter`: one `TIMED_OUT`, cause unknown, a demonstrated risk
+  removed.** On 2026-11-12 a single observation reported `TIMED_OUT` for the `clientUrl`
   ternary of the trigger body, then in `PagerDutyEventClientImpl.triggerEvent`
   (`RemoveConditionalMutator_EQUAL_ELSE`), with the load average near 70 on 10 cores.
   - Mechanism, demonstrated 2026-11-13 on this machine (macOS, with
@@ -86,19 +86,22 @@ grouped by the principle that makes it equivalent.
     every load observed here: PIT allows 1.25 times the test's coverage-phase time plus 4
     seconds, and that test never took more than a few hundred milliseconds. Producing the
     stall needs no machine load.
-  - Attribution to the 2026-11-12 observation is inferred, not captured: nothing kept
-    from that run shows which port its server had, and that run named no covering test.
-    What fits: the mutated code is a straight-line expression with no loop, wait or lock,
-    and the test that killed that mutant in every report that names one ran through the
-    harness. The rate is plausible and no more: 29 loopback listeners were counted in the
-    ephemeral range on 2026-11-13, and the harness ran 16 times in one adapter-suite run,
-    14 of them in the mutation phase, about one chance in 40 of a capture there per run,
-    before asking whether the listener stays silent. Those counts were taken after the
-    body's rendering moved to `triggerJson`; neither the harness's run count nor the
-    listener count on 2026-11-12 was measured. What part load played is not known: on
+  - The cause of the 2026-11-12 observation is unknown, and stays so: nothing kept from
+    that run shows which port its server had or what its test saw, and that run named no
+    covering test. The mechanism is consistent with it: the mutated code is a
+    straight-line expression with no loop, wait or lock, and the test that killed that
+    mutant in every report that names one ran through the harness. So is load: on
     2026-11-13 the unchanged harness ran through two gates and two solo runs at load
     averages between 6 and 27 with no `TIMED_OUT`, though by then `TriggerJsonTests`, not
-    the harness, killed that mutant. Neither a capture nor load is excluded.
+    the harness, killed that mutant. Neither is excluded.
+  - How often a capture could happen, as an illustration and not as the chance that one
+    caused this observation: 29 loopback listeners were counted in the ephemeral range on
+    2026-11-13, and the harness ran 16 times in one adapter-suite run, 14 of them in the
+    mutation phase. If each of those binds were equally likely to be given any of the
+    16,384 ports, independently of the others, a capture would occur in about one such
+    run in 40. That assumes the counts of 2026-11-13, taken after the body's rendering
+    moved to `triggerJson`, held on 2026-11-12, and says nothing of whether the capturing
+    listener stays silent; none of that was measured.
   - Removed: the harness binds the loopback address, as every other wire test here does,
     and builds its client's endpoint from the bound address. `ClientTestRunner` asserts
     the loopback bind, that the harness's client targets the bound address, and the
@@ -118,10 +121,12 @@ grouped by the principle that makes it equivalent.
     HARDENING.md has such a mutant kept "out of the audited set while its contract-first
     repair or acceptance is completed" instead of a `cause:untriaged` draft row being
     committed.
-  - For review: whether this attribution is accepted. The removal itself is checked by
-    the tests above and by a history-free module gate on the changed harness, which
-    showed no `TIMED_OUT` and no unmutated failure at a load average near 56.
-- **Open until reviewed, `adapter`: one unmutated failure of the wire harness.** In the
+  - Review, 2026-11-14: the harness change is accepted as removing the demonstrated
+    risk, checked by the tests above and by a history-free module gate on the changed
+    harness, which showed no `TIMED_OUT` and no unmutated failure at a load average near
+    56. The cause of the observation is not thereby decided.
+- **Reviewed 2026-11-14, `adapter`: one unmutated failure of the wire harness, cause
+  unknown.** In the
   invocation that followed that observation, with the load average near 65, PIT refused
   to run because `ClientTestRunner`'s first dynamic test (`EventClientTests`) failed
   without mutation, about two seconds after the minion received its tests. PIT's verbose
@@ -129,17 +134,20 @@ grouped by the principle that makes it equivalent.
   - The same mechanism can produce it: a captured connection that the other listener
     closes fails that test at once, where a request timeout would have taken eight
     seconds.
-  - The rate does not favour it. This failure needs a capture at one bind, the first of
-    the coverage phase: about one chance in 565 at the listener count above, which makes
-    the attribution weak. The listener count on 2026-11-12 is not known.
+  - Under the same illustrative assumptions, a capture at the one bind this failure
+    involves, the first of the coverage phase, would occur about once in 565 such binds.
+    That is a frequency under those assumptions, not the chance that a capture caused
+    this failure, which cannot be judged without the port or the error from that run.
+    Neither was kept.
   - Not excluded: the client and that test had both changed earlier the same day
     (`e4001e9`, the builder hand-off, and `2bcddcd`, the body-size check, on the request
     path; `f6e3812`, the 2xx response parser; `baa8e9a`, the removed `authToken`, in the
     test). The test passed three times outside PIT straight afterwards and has passed in
     every run since.
-  - The cause is not established. The harness change removes the one mechanism that was
-    demonstrated; a repeat is a new finding, diagnosed from that run's daemon log and the
-    diagnostic task above, not re-run away.
+  - The cause is unknown, and stays so. The harness change removes the one mechanism
+    that was demonstrated, and the review of 2026-11-14 accepted it on that footing; a
+    repeat is a new finding, diagnosed from that run's daemon log and the diagnostic task
+    above, not re-run away.
   - A wrong-reason failure of this kind during the mutation phase would have been
     recorded as a kill. A history-free gate on the changed harness detects the same
     mutants as the run before the change, so none of the current kills depends on a
