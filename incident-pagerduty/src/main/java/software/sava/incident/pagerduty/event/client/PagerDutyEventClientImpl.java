@@ -83,8 +83,8 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     } else {
       // a 2xx means the event was accepted, so a body this parser cannot read (a bad gzip
       // encoding: reported with empty text) or cannot parse must not surface as a transport
-      // failure, which the retry wrappers would send again; a caller-set testResponse makes
-      // the transport read the body before this parser runs, outside this guard
+      // failure, which the retry wrappers would send again; wrapResponseParser sends a body
+      // a caller-set testResponse could not be given on to this parser, to fail here too
       byte[] body = null;
       try {
         body = readBody(httpResponse);
@@ -118,6 +118,33 @@ final class PagerDutyEventClientImpl extends JsonHttpClient implements PagerDuty
     this.defaultRoutingKey = defaultRoutingKey;
     this.eventUri = baseUri.resolve("/v2/enqueue");
     this.changeEventUri = baseUri.resolve("/v2/change/enqueue");
+  }
+
+  /// The transport reads the body for a caller-set `testResponse` before the parser runs,
+  /// which would put a body that cannot be read (a bad gzip encoding) outside the parser's
+  /// guard: an accepted event would fail as a transport failure and be sent again. Here the
+  /// read is tried first. A body that cannot be read goes to the parser as it would without
+  /// a predicate, which has no body to judge; a readable one is judged as the transport
+  /// judges it, a rejected response completing with null.
+  @Override
+  protected <R> Function<HttpResponse<?>, R> wrapResponseParser(final Function<HttpResponse<?>, R> parser) {
+    if (testResponse == null) {
+      return parser;
+    }
+    return response -> passesTheResponseTest(response) ? parser.apply(response) : null;
+  }
+
+  /// Whether `response` goes on to the parser: when its body cannot be read, so that the
+  /// parser deals with it as it does without a predicate, and otherwise when the caller's
+  /// `testResponse` accepts the body.
+  private boolean passesTheResponseTest(final HttpResponse<?> response) {
+    final byte[] body;
+    try {
+      body = readBody(response);
+    } catch (final RuntimeException unreadable) {
+      return true;
+    }
+    return testResponse.test(response, body);
   }
 
   @Override
