@@ -31,7 +31,13 @@ Java clients for service-incident / alerting APIs, with no dependencies beyond t
   (`messageThreadId`) and optional severities sent silently (`silentSeverities`, sent as
   `disable_notification`) from config, Bot API `sendMessage` endpoint). A format may also
   read the wait from a failed response's body (`WebhookFormat.retryAfter(String)`);
-  `TelegramTextFormat` reads the Bot API's `parameters.retry_after`. Notification only — no incident lifecycle,
+  `TelegramTextFormat` reads the Bot API's `parameters.retry_after`. A format may also name,
+  from a refusal that cannot be retried, the format to send with instead
+  (`WebhookFormat.movedTo(String)`, null by default): the incident adapter
+  (`WebhookIncidentClient`) then re-renders the alert, logs a WARNING and sends it once more,
+  remembering nothing; `TelegramTextFormat` follows a basic group's upgrade to a supergroup
+  (`parameters.migrate_to_chat_id`), only from a basic-group `chatId`, dropping the topic.
+  Notification only — no incident lifecycle,
   `supportsResolve()` is false.
 - `incident-examples/` — runnable usage examples; not published.
 
@@ -88,8 +94,10 @@ truth. Verify against them, not against this repo's existing output:
 - **Telegram** — the Bot API page `https://core.telegram.org/bots/api` (`sendMessage`,
   `ResponseParameters`, "Making requests") is the contract for the `telegram` provider; the
   server source `https://github.com/tdlib/telegram-bot-api` (`telegram-bot-api/Query.cpp`,
-  `HttpConnection.cpp`) shows what the page leaves out: an error's HTTP status is its
-  `error_code`, and a 429 carries a `Retry-After` header beside `parameters.retry_after`.
+  `HttpConnection.cpp`, `Client.cpp`) shows what the page leaves out: an error's HTTP status
+  is its `error_code`, a 429 carries a `Retry-After` header beside `parameters.retry_after`,
+  and a basic group that was upgraded answers 400 with `parameters.migrate_to_chat_id`
+  before anything is sent (`check_chat_access`).
 
 Clone reference repos outside this repository (or in a git-ignored location), record the
 paths in `AGENTS.local.md`, and `git pull` an existing clone before comparing.
@@ -122,8 +130,9 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
 - Optional fields are omitted when null/blank — never serialized as `"null"` or `""`.
 - Response parsing contract: unknown fields are skipped; malformed input fails with a
   `RuntimeException`, never anything else (the response parsers' fuzz targets enforce
-  this). `TelegramTextFormat.botApiRetryAfter` is the exception: the Bot API error body
-  reader never throws, and reads leniently, so any body gives null or a positive wait.
+  this). The two Bot API error body readers are the exception: they never throw, and read
+  leniently, so any body gives `TelegramTextFormat.botApiRetryAfter` null or a positive
+  wait, and `TelegramTextFormat.botApiMigrateToChatId` 0 or a supergroup's chat id.
 
 ## Build, test, and hardening
 
@@ -137,11 +146,11 @@ Serialization is hand-rolled (no reflection, no databind). The rules that keep i
 ./gradlew :<module>:fuzz<Target>                 # Jazzer fuzzing:
                                                  #   :incident-io:fuzzRequest|fuzzResponse|fuzzAlertEvent|fuzzAlertEventResponse
                                                  #   :incident-pagerduty:fuzzPayload
-                                                 #   :incident-webhook:fuzzFormat|fuzzRetryAfter
+                                                 #   :incident-webhook:fuzzFormat|fuzzRetryAfter|fuzzMigrateToChatId
 ./gradlew :<module>:hardeningHelp                # installed-version authority; run it
 ```
 
-Those fifteen suites and seven fuzz targets are this repo's inventory, declared in each
+Those fifteen suites and eight fuzz targets are this repo's inventory, declared in each
 module's `build.gradle.kts` under the `hardening` extension (from sava-build's
 `software.sava.build.feature.hardening` plugin). Everything else about the tooling — what
 each writer task does, which properties exist, which have been refused — comes from
@@ -178,17 +187,18 @@ Conventions to preserve:
   serialized field, extend the fuzz oracle *and* add an exact-string unit test — the
   mutation suites only measure what the unit tests pin down.
 - The response parsers' fuzz targets follow the "garbage in → RuntimeException out"
-  contract; `retryAfter` is the exception, its reader (`TelegramTextFormat.botApiRetryAfter`)
-  never throws and gives null or a positive wait. Parser seed corpora live under
+  contract; `retryAfter` and `migrateToChatId` are the exceptions, their readers never
+  throw: `TelegramTextFormat.botApiRetryAfter` gives null or a positive wait, and
+  `TelegramTextFormat.botApiMigrateToChatId` 0 or a supergroup's chat id. Parser seed corpora live under
   `src/test/resources/fuzz/<target>/`.
 - Every fuzz target here declares a `seedCorpus`. A corpus does two independent jobs:
   *bootstrap* (coverage a mutator would take too long to reach — the `response` corpus)
   and *regression* (a committed landing place for findings — the `request`, `alertEvent`,
-  `alertEventResponse`, `payload`, `format` and `retryAfter` corpora; the `request` and
+  `alertEventResponse`, `payload`, `format`, `retryAfter` and `migrateToChatId` corpora; the `request` and
   `payload` corpora and the `format` corpus's `full-fields.bin` were measured to change no
   mutation score, and `format`'s `topic.bin` and `silent.bin` and the `alertEvent`, `alertEventResponse` and
-  `retryAfter` corpora have not been measured). "The
-  mutator reaches this format from scratch" answers only the bootstrap question. All seven
+  `retryAfter` and `migrateToChatId` corpora have not been measured). "The
+  mutator reaches this format from scratch" answers only the bootstrap question. All eight
   targets here declare one; if a future target genuinely does neither job, take the decline
   property from `:<module>:hardeningHelp`, and record the measurement that justified it the way an
   acceptance is argued. Seed provenance goes in a README next to — never inside — the

@@ -12,7 +12,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 /// Telegram included — so no error envelope is parsed; the raw response body is carried
 /// as-is. The wait a body states is read by the request's
 /// [software.sava.incident.webhook.WebhookFormat]
-/// ([software.sava.incident.webhook.WebhookFormat#retryAfter(String)]) and handed in. The
+/// ([software.sava.incident.webhook.WebhookFormat#retryAfter(String)]) and handed in; the
+/// incident adapter also hands [#body()] to the format's
+/// [software.sava.incident.webhook.WebhookFormat#movedTo(String)]. The
 /// message deliberately omits the request URI: webhook URLs (e.g. Slack incoming webhooks)
 /// carry the credential, and exception messages end up in logs.
 public final class WebhookRequestException extends RuntimeException implements IncidentClientException {

@@ -46,3 +46,27 @@ description that it wraps in the Bot API's 429 body (oracle 2, round trip).
 Both exist as the landing place for findings (each committed as a seed plus a named
 regression test), not to buy coverage, and have not been measured against a mutation
 score.
+
+## `migrateToChatId/` (regression corpus for `WebhookMigrateToChatIdFuzz`)
+
+The harness reads each input as `WebhookRetryAfterFuzz` does: whole, decoded as UTF-8 and
+handed to `TelegramTextFormat.botApiMigrateToChatId` and to the `movedTo` hook of a
+basic-group format and of a supergroup format (oracle 1, garbage in), and split, as a
+big-endian `long` in its first eight bytes followed by a UTF-8 description that it wraps in
+the Bot API's 400 body (oracle 2, round trip), once more with `"retry_after":35` ahead of
+the id, read by both Bot API readers (oracle 3, the shared walker's differential).
+
+- `canonical-400.json` — the Bot API's 400 for a basic group upgraded to a supergroup, as
+  its server writes it,
+  `{"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1001234567890}}`,
+  in the field order of `tdlib/telegram-bot-api`'s `Query.cpp` (`JsonQueryError::store`)
+  with the description and parameter of `Client.cpp`'s `check_chat_access`. Oracle 1 reads
+  it as -1001234567890 and moves the basic group there; oracle 2 reads its first eight
+  bytes, `{"ok":fa`, as `n` = 8872776721799734881, which is no supergroup id.
+- `migrate-1001234567890.bin` — the oracle-2 layout written out: `n` = -1001234567890 as
+  eight big-endian bytes (`ff ff ff 16 e1 c4 ed 2e`), then
+  `Bad Request: group chat was upgraded to a supergroup chat`. Oracle 1 reads it as no move.
+
+Both exist as the landing place for findings (each committed as a seed plus a named
+regression test), not to buy coverage, and have not been measured against a mutation
+score.

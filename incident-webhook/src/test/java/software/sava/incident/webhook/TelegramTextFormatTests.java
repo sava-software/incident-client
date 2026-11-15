@@ -422,6 +422,70 @@ final class TelegramTextFormatTests {
     assertStrictUtf8(json);
   }
 
+  /// The Bot API's 400 for a basic group that was upgraded to a supergroup.
+  private static final String UPGRADED = """
+      {"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1001234567890}}""";
+
+  /// The moved format is the supergroup's, with no topic and the same silent severities.
+  @Test
+  void movedToFollowsAnUpgradedGroup() {
+    final var moved = new TelegramTextFormat("-123456789", 42, EnumSet.of(INFO)).movedTo(UPGRADED);
+    assertEquals(new TelegramTextFormat("-1001234567890", 0, EnumSet.of(INFO)), moved);
+    assertEquals("-1001234567890", moved.chatId());
+    assertEquals(0, moved.messageThreadId());
+    assertEquals(Set.of(INFO), moved.silentSeverities());
+    assertEquals("""
+            {"chat_id":"-1001234567890","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        moved.render(summaryAlert(INFO))
+    );
+    assertEquals("""
+            {"chat_id":"-1001234567890","text":"[ERROR] summary-1","link_preview_options":{"is_disabled":true}}""",
+        moved.render(summaryAlert(ERROR))
+    );
+    // a supergroup's id never moves again
+    assertNull(moved.movedTo(UPGRADED));
+  }
+
+  /// Only `-` followed by 1 to 12 ASCII digits, the first not `0`, is a basic group's id.
+  @Test
+  void onlyABasicGroupMoves() {
+    for (final var chatId : List.of("-1", "-9", "-10", "-123456789", "-100000000000", "-999999999999")) {
+      assertEquals(new TelegramTextFormat("-1001234567890"), new TelegramTextFormat(chatId).movedTo(UPGRADED), chatId);
+    }
+    for (final var chatId : List.of(
+        // 13 digits: the supergroup and channel range
+        "-1000000000000", "-1001234567890", "-9999999999999",
+        "@group", "123", "1", "-0", "-012", " -5", "-5 ", "+5", "-", "--5", "5-",
+        // the characters either side of the ASCII digits
+        "-1/", "-1:", "-/", "-:",
+        // digits outside ASCII
+        "-١٢٣", "-1٢")) {
+      assertNull(new TelegramTextFormat(chatId).movedTo(UPGRADED), chatId);
+    }
+  }
+
+  @Test
+  void movedToIsNullWithoutAMigration() {
+    final var format = new TelegramTextFormat("-123456789", 42, EnumSet.of(INFO));
+    for (final var body : List.of("""
+            {"ok":false,"error_code":429,"description":"Too Many Requests: retry after 35","parameters":{"retry_after":35}}""",
+        """
+            {"ok":true,"result":{"message_id":7,"chat":{"id":-1001234567890}},"parameters":{"migrate_to_chat_id":-1001234567890}}""",
+        "")) {
+      assertNull(format.movedTo(body), body);
+    }
+    assertNull(format.movedTo(null));
+  }
+
+  @Test
+  void theDefaultFormatNeverMoves() {
+    final WebhookFormat lambda = alert -> "{}";
+    for (final var format : List.of(lambda, WebhookFormats.GENERIC_JSON, WebhookFormats.SLACK_TEXT)) {
+      assertNull(format.movedTo(UPGRADED));
+      assertNull(format.movedTo(""));
+    }
+  }
+
   /// Exactly at the limit is not over it: the text is sent as it is, even when its last
   /// unit is a high surrogate.
   @Test

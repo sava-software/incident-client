@@ -15,9 +15,13 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Duration;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,8 +32,9 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// way a provider in another jar would: a custom [WebhookFormat] composing
 /// [WebhookFormats#renderPlainText(IncidentAlert)], a stateless provider extending
 /// [BaseWebhookIncidentClientFactory], a stateful provider composing
-/// [WebhookConfig#parser()] for a field [WebhookConfig] does not carry, and a format class
-/// overriding [WebhookFormat#retryAfter(String)] to read a product's own failure body.
+/// [WebhookConfig#parser()] for a field [WebhookConfig] does not carry, and format classes
+/// overriding [WebhookFormat#retryAfter(String)] and [WebhookFormat#movedTo(String)] to read
+/// a product's own failure body.
 final class CustomProviderExtensionTests {
 
   private static final IncidentAlert ALERT = IncidentAlert.build()
@@ -148,6 +153,82 @@ final class CustomProviderExtensionTests {
       assertTrue(cause.canBeRetried());
       assertEquals(Duration.ofSeconds(12), cause.retryAfter());
     } finally {
+      server.stop(0);
+    }
+  }
+
+  /// A product whose refusals name the room that replaced a closed one, `{"moved_to":"..."}`.
+  record RoomFormat(String room) implements WebhookFormat {
+
+    @Override
+    public String render(final IncidentAlert alert) {
+      return String.format("""
+          {"room":"%s","content":"%s"}""", escapeJson(room), escapeJson(WebhookFormats.renderPlainText(alert)));
+    }
+
+    @Override
+    public WebhookFormat movedTo(final String responseBody) {
+      final var moved = new Object() {
+        String room;
+      };
+      JsonIterator.parse(responseBody).testObject((buf, offset, len, fieldJi) -> {
+        if (fieldEquals("moved_to", buf, offset, len)) {
+          moved.room = fieldJi.readString();
+        } else {
+          fieldJi.skip();
+        }
+        return true;
+      });
+      return moved.room == null ? null : new RoomFormat(moved.room);
+    }
+  }
+
+  /// A stateless provider for room 7, through the public factory base.
+  static final class RoomSevenFactory extends BaseWebhookIncidentClientFactory {
+
+    RoomSevenFactory() {
+      super("room-seven");
+    }
+
+    @Override
+    protected WebhookFormat format(final WebhookConfig config) {
+      return new RoomFormat("room-7");
+    }
+  }
+
+  @Test
+  void aCustomFormatMovesItsDestination() throws IOException {
+    final var requests = new ConcurrentLinkedQueue<String>();
+    final var server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/", exchange -> {
+      try (exchange) {
+        final var request = new String(exchange.getRequestBody().readAllBytes(), UTF_8);
+        requests.add(request);
+        final boolean closed = request.contains("\"room\":\"room-7\"");
+        final var body = (closed ? """
+            {"error":"room closed","moved_to":"room-8"}""" : "posted").getBytes(UTF_8);
+        exchange.sendResponseHeaders(closed ? 410 : 200, body.length);
+        exchange.getResponseBody().write(body);
+      }
+    });
+    server.setExecutor(ForkJoinPool.commonPool());
+    server.start();
+    // the follow logs a WARNING; keep it out of the test output
+    final var logger = Logger.getLogger(WebhookIncidentClient.class.getPackageName());
+    final var previousLevel = logger.getLevel();
+    logger.setLevel(Level.OFF);
+    try {
+      final var properties = new Properties();
+      properties.setProperty("endpoint", TestEndpoint.http(server.getAddress(), "/hook").toString());
+      final var client = new RoomSevenFactory().createClient(properties);
+      final var response = client.reportIncident(ALERT).join();
+      assertEquals("posted", response.status());
+      assertEquals(List.of("""
+              {"room":"room-7","content":"[CRITICAL] summary-1"}""", """
+              {"room":"room-8","content":"[CRITICAL] summary-1"}"""),
+          List.copyOf(requests));
+    } finally {
+      logger.setLevel(previousLevel);
       server.stop(0);
     }
   }

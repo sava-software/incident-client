@@ -3,6 +3,8 @@ plugins {
 }
 
 testModuleInfo {
+  // JulRecorder captures System.Logger output through its JUL backend
+  requires("java.logging")
   requires("jdk.httpserver")
   requires("org.junit.jupiter.api")
   runtimeOnly("org.junit.jupiter.engine")
@@ -13,6 +15,7 @@ dependencies {
 }
 
 hardening {
+  generateTestSupport = true
   mutation.register("format") {
     targetClasses = listOf(
       "software.sava.incident.webhook.WebhookFormat",
@@ -62,5 +65,15 @@ hardening {
     // regression corpus, not bootstrap: JSON structure is reachable by the mutator, and the
     // canonical 429 body seeds both oracles; a finding needs a committed seed replayed by check
     seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/retryAfter")
+  }
+  fuzz.register("migrateToChatId") {
+    targetClass = "software.sava.incident.webhook.WebhookMigrateToChatIdFuzz"
+    // the body is receiver-controlled and unbounded, but every token and nesting boundary
+    // the reader decides on shows in a few hundred bytes; the unit tests pin the 1 MB and
+    // 100,000-deep cases
+    maxLen = 4096
+    // regression corpus, not bootstrap: JSON structure is reachable by the mutator, and the
+    // canonical 400 body seeds all three oracles; a finding needs a committed seed replayed by check
+    seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/migrateToChatId")
   }
 }

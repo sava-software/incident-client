@@ -8,7 +8,7 @@ A webhook message is fire-and-forget notification, not incident management: ther
 incident id, permalink, or lifecycle, and `supportsResolve()` is `false`. Transport,
 configuration, and error handling are shared across all formats; the only per-product
 variance is the `WebhookFormat` that renders an `IncidentAlert` into the JSON body and
-may read the wait a failed response's body asks for.
+may read the wait a failed response's body asks for, or the destination it names instead.
 
 ## Formats
 
@@ -48,7 +48,14 @@ may read the wait a failed response's body asks for.
   between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
   outright. A failure's wait is read from the Bot API error body's
   `parameters.retry_after` (`TelegramTextFormat.botApiRetryAfter`, public for a custom
-  format that posts to the Bot API).
+  format that posts to the Bot API). A basic group upgraded to a supergroup refuses every
+  later message with a 400 naming the supergroup, `parameters.migrate_to_chat_id`
+  (`TelegramTextFormat.botApiMigrateToChatId`, public too): when `chatId` is a basic group's
+  id (`-` and 1 to 12 ASCII digits, the first not `0`), the incident adapter sends the alert to that supergroup once
+  more, with the same silent severities and without `message_thread_id` (a basic group has
+  no topics, so a configured one never applied), and logs a WARNING naming both chats. It
+  remembers nothing, so every report pays the refused request and logs again until `chatId`
+  is updated.
 
 Supporting another product (Discord, Google Chat, ...) is one `WebhookFormat`
 implementation plus a factory registration — see
@@ -95,7 +102,11 @@ Telegram key line counts toward the existing 4096-character text limit and is su
 to truncation with the rest of the message.
 
 `status()` is the receiver's stripped response body (`ok` for Slack) or `delivered`
-when the body is empty, and `url()` is null. Non-2xx responses fail with a
+when the body is empty, and `url()` is null. For Telegram it is the Bot API's success
+document, `{"ok":true,"result":{...}}`, whose `result` is the sent Message: its
+`message_id` (0 when Telegram schedules the message instead of sending it at once) and
+`chat.id`, the chat the alert reached — the new supergroup when an upgraded group was
+followed. It echoes the message text, so it is about as long as the alert. Non-2xx responses fail with a
 `WebhookRequestException` whose message carries the status and response body but never
 the endpoint URL — webhook URLs are credentials. Its `retryAfter()`, the wait
 `IncidentService` serves before the next attempt, is the `Retry-After` header when it
@@ -108,11 +119,30 @@ Bot API documents the wait in that body, and its server also sends the header. T
 incident adapter posts with its format; a direct `client.post(json)` reads no wait from the body, and
 `client.post(json, format)` hands the body to `format`.
 
+A refusal that cannot be retried (`canBeRetried()` false: neither a 429, a 5xx nor a
+transport failure) is also handed to the format's `movedTo(String)` hook, by the incident
+adapter only. When it names another format, the adapter renders the alert with it, logs a
+WARNING to the `software.sava.incident.webhook` logger naming both formats as their
+`toString()` gives them (never the client, which holds the endpoint), and sends it once
+more; the report then completes with that request's outcome, and a failure of it carries
+the first refusal in `getSuppressed()` (unless it is that same refusal). The second answer is never asked about, so a report
+makes at most two requests; a retry by `IncidentService` is a new report and starts again
+at the configured destination. Any other failure is the one the receiver gave. A direct `client.post(json, format)` never follows; its caller can, from the
+`WebhookRequestException`:
+
+```java
+final var moved = format.movedTo(ex.body());   // Telegram: TelegramTextFormat.botApiMigrateToChatId
+if (moved != null) {
+  client.post(moved.render(alert), moved);
+}
+```
+
 ## Writing Your Own Provider
 
 `WebhookFormat` is the whole seam: one abstract method rendering an `IncidentAlert` into
-the JSON body, and a `retryAfter(String)` hook, null by default, reading the wait from a
-failed response's body. Transport, headers, and error handling never change per platform.
+the JSON body, a `retryAfter(String)` hook, null by default, reading the wait from a
+failed response's body, and a `movedTo(String)` hook, null by default, reading from a
+refusal's body the format to send with instead when the destination has moved for good. Transport, headers, and error handling never change per platform.
 In code, a format that only renders is a lambda — `WebhookFormats.renderPlainText(alert)`
 supplies the shared `[SEVERITY] summary / details / Source: ...` text so chat-style
 platforms only wrap it:
@@ -127,15 +157,29 @@ final IncidentClient client = WebhookClient.clientBuilder()
     .incidentClient(discord);
 ```
 
-A lambda cannot override the hook, so a product whose failures state a wait in the body
-needs a class; one posting to the Telegram Bot API can reuse its reader:
+A lambda cannot override the hooks, so a product whose failures state a wait or a new
+destination in the body needs a class; one posting to the Telegram Bot API can reuse its
+readers:
 
 ```java
 @Override
 public Duration retryAfter(final String responseBody) {
   return TelegramTextFormat.botApiRetryAfter(responseBody);
 }
+
+@Override
+public WebhookFormat movedTo(final String responseBody) {
+  final long chatId = TelegramTextFormat.botApiMigrateToChatId(responseBody);   // 0 for none
+  return chatId == 0 ? null : new MyBotApiFormat(Long.toString(chatId));
+}
 ```
+
+`movedTo` is asked only after a refusal that cannot be retried, its answer is followed once
+per report when it is non-null and not equal to the format, and it should not throw (a
+`RuntimeException` from it is no move). A format that never overrides it, every lambda
+included, is never followed. The WARNING prints both formats' `toString()`, so a format
+that holds a secret must keep it out of its `toString()`; a record's generated one prints
+every component.
 
 To register your own provider id for config-driven use, publish an
 `IncidentClientFactory` from your jar via `ServiceLoader` (a `provides` clause in
@@ -179,7 +223,7 @@ default; `requestTimeout`, `headers`, and `bearerToken` are optional, as is
 or null, never a string; anything else fails the parse, whichever provider is configured),
 and `silentSeverities`, the severities only the `telegram` provider sends silently (a
 comma-separated list of `IncidentSeverity` names in properties, each stripped of surrounding
-spaces; a JSON array of names, or null; names are case-sensitive; absent, blank, null or an
+whitespace; a JSON array of names, or null; names are case-sensitive; absent, blank, null or an
 empty array means none; an unknown name, an empty list entry, or any other JSON value fails
 the parse, whichever provider is configured).
 

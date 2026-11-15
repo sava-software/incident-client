@@ -30,6 +30,12 @@ public interface WebhookClient extends HttpApiClient {
   /// response body ([WebhookFormat#retryAfter(String)]); a `Retry-After` header that parses
   /// still wins. Throws a NullPointerException at once for a null `format`.
   ///
+  /// It never asks `format` whether the destination moved ([WebhookFormat#movedTo(String)]);
+  /// the incident adapter does. A caller posting directly can follow a move itself: call
+  /// `format.movedTo(ex.body())`, or
+  /// [TelegramTextFormat#botApiMigrateToChatId(String)] with `ex.body()`, on the failure's
+  /// `WebhookRequestException ex`, then render and post with the result.
+  ///
   /// The default ignores `format` beyond that null check and returns [#post(String)]'s
   /// future, so its failures state only the header's wait: an implementation that builds
   /// its own failures overrides this to hand `format` the body.

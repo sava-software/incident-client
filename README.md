@@ -154,7 +154,10 @@ do their own mapping; `WebhookFormats.SLACK_TEXT` (provider id `slack`) sends a 
 `{"text":"..."}` Slack incoming-webhook message; `TelegramTextFormat` (provider id
 `telegram`) sends a Bot API `sendMessage` body to
 `https://api.telegram.org/bot<TOKEN>/sendMessage` with a configured `chatId` and,
-optionally, a forum topic (`messageThreadId`); its link previews are always disabled.
+optionally, a forum topic (`messageThreadId`) and severities sent silently
+(`silentSeverities`); its link previews are always disabled, and an alert to a basic group
+that was upgraded to a supergroup is sent once more to the supergroup, with a WARNING
+logged (see the [module README](incident-webhook/README.md)).
 
 ```java
 final var client = WebhookClient.clientBuilder()
