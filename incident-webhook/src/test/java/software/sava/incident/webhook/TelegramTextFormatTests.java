@@ -11,9 +11,14 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.EnumSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
+import static software.sava.incident.core.api.IncidentSeverity.*;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 
 final class TelegramTextFormatTests {
@@ -102,9 +107,15 @@ final class TelegramTextFormatTests {
   void theOneArgumentConstructorMeansNoTopic() {
     final var format = new TelegramTextFormat("chat-1");
     assertEquals(new TelegramTextFormat("chat-1", 0), format);
+    assertEquals(new TelegramTextFormat("chat-1", 0, null), format);
     assertEquals("chat-1", format.chatId());
     assertEquals(0, format.messageThreadId());
-    assertEquals(7, new TelegramTextFormat("chat-1", 7).messageThreadId());
+    assertEquals(Set.of(), format.silentSeverities());
+    final var topic = new TelegramTextFormat("chat-1", 7);
+    assertEquals(7, topic.messageThreadId());
+    assertEquals("chat-1", topic.chatId());
+    assertEquals(Set.of(), topic.silentSeverities());
+    assertEquals(new TelegramTextFormat("chat-1", 7, null), topic);
   }
 
   @Test
@@ -124,10 +135,159 @@ final class TelegramTextFormatTests {
   }
 
   @Test
-  void toStringNamesBothComponents() {
-    assertEquals("TelegramTextFormat[chatId=chat-1, messageThreadId=0]", new TelegramTextFormat("chat-1").toString());
-    assertEquals("TelegramTextFormat[chatId=@channel, messageThreadId=42]",
+  void toStringNamesEveryComponent() {
+    assertEquals("TelegramTextFormat[chatId=chat-1, messageThreadId=0, silentSeverities=[]]",
+        new TelegramTextFormat("chat-1").toString());
+    assertEquals("TelegramTextFormat[chatId=@channel, messageThreadId=42, silentSeverities=[]]",
         new TelegramTextFormat("@channel", 42).toString());
+    // declaration order, whatever the order given
+    assertEquals("TelegramTextFormat[chatId=chat-1, messageThreadId=7, silentSeverities=[ERROR, INFO]]",
+        new TelegramTextFormat("chat-1", 7, new LinkedHashSet<>(List.of(INFO, ERROR))).toString());
+  }
+
+  private static IncidentAlert summaryAlert(final IncidentSeverity severity) {
+    return IncidentAlert.build()
+        .summary("summary-1")
+        .severity(severity)
+        .create();
+  }
+
+  @Test
+  void aSilentSeverityAddsDisableNotification() {
+    assertEquals("""
+            {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        new TelegramTextFormat("-100123", 0, EnumSet.of(INFO)).render(TOPIC_ALERT)
+    );
+    assertEquals("""
+            {"chat_id":"-100123","message_thread_id":42,"text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        new TelegramTextFormat("-100123", 42, EnumSet.of(INFO)).render(TOPIC_ALERT)
+    );
+  }
+
+  /// Only a listed severity is silent; any other renders the body without the field.
+  @Test
+  void silenceIsPerSeverity() {
+    final var format = new TelegramTextFormat("-100123", 0, EnumSet.of(INFO, WARNING));
+    assertEquals("""
+            {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        format.render(summaryAlert(INFO))
+    );
+    assertEquals("""
+            {"chat_id":"-100123","text":"[WARNING] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        format.render(summaryAlert(WARNING))
+    );
+    assertEquals("""
+            {"chat_id":"-100123","text":"[ERROR] summary-1","link_preview_options":{"is_disabled":true}}""",
+        format.render(summaryAlert(ERROR))
+    );
+    assertEquals("""
+            {"chat_id":"-100123","text":"[CRITICAL] summary-1","link_preview_options":{"is_disabled":true}}""",
+        format.render(summaryAlert(CRITICAL))
+    );
+  }
+
+  /// CRITICAL may be listed, alone or with every other severity.
+  @Test
+  void everySeverityCanBeSilent() {
+    final var all = new TelegramTextFormat("-100123", 0, EnumSet.allOf(IncidentSeverity.class));
+    for (final var severity : IncidentSeverity.values()) {
+      assertEquals("""
+              {"chat_id":"-100123","text":"[%s] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}"""
+              .formatted(severity.name()),
+          all.render(summaryAlert(severity)), severity.name()
+      );
+    }
+    assertEquals("""
+            {"chat_id":"-100123","text":"[CRITICAL] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        new TelegramTextFormat("-100123", 0, Set.of(CRITICAL)).render(summaryAlert(CRITICAL))
+    );
+  }
+
+  /// Null and every empty set mean none: the body is today's, byte for byte, for every
+  /// severity, and the formats are equal.
+  @Test
+  void noSilentSeveritiesIsTodaysBody() {
+    final var expected = new TelegramTextFormat("-100123", 0);
+    final var formats = List.of(
+        new TelegramTextFormat("-100123", 0, null),
+        new TelegramTextFormat("-100123", 0, Set.of()),
+        new TelegramTextFormat("-100123", 0, EnumSet.noneOf(IncidentSeverity.class)),
+        new TelegramTextFormat("-100123"),
+        expected
+    );
+    for (final var format : formats) {
+      assertEquals(expected, format);
+      assertEquals(expected.hashCode(), format.hashCode());
+      assertEquals(Set.of(), format.silentSeverities());
+      for (final var severity : IncidentSeverity.values()) {
+        assertEquals("""
+                {"chat_id":"-100123","text":"[%s] summary-1","link_preview_options":{"is_disabled":true}}"""
+                .formatted(severity.name()),
+            format.render(summaryAlert(severity)), severity.name()
+        );
+      }
+    }
+  }
+
+  @Test
+  void silentSeveritiesAreCopiedAndImmutable() {
+    final var source = EnumSet.of(INFO);
+    final var format = new TelegramTextFormat("-100123", 0, source);
+    source.add(ERROR);
+    source.remove(INFO);
+    assertEquals(Set.of(INFO), format.silentSeverities());
+    assertEquals(new TelegramTextFormat("-100123", 0, EnumSet.of(INFO)), format);
+    assertEquals("""
+            {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""",
+        format.render(summaryAlert(INFO))
+    );
+    assertEquals("""
+            {"chat_id":"-100123","text":"[ERROR] summary-1","link_preview_options":{"is_disabled":true}}""",
+        format.render(summaryAlert(ERROR))
+    );
+    assertThrows(UnsupportedOperationException.class, () -> format.silentSeverities().add(ERROR));
+    assertThrows(UnsupportedOperationException.class, () -> format.silentSeverities().remove(INFO));
+
+    // the empty default is just as unmodifiable, whichever way it was given
+    final var emptySource = EnumSet.noneOf(IncidentSeverity.class);
+    final var empty = new TelegramTextFormat("-100123", 0, emptySource);
+    emptySource.add(INFO);
+    assertEquals(Set.of(), empty.silentSeverities());
+    assertThrows(UnsupportedOperationException.class, () -> empty.silentSeverities().add(INFO));
+    assertThrows(UnsupportedOperationException.class, () -> new TelegramTextFormat("-100123").silentSeverities().add(INFO));
+  }
+
+  @Test
+  void silentSeveritiesEqualityIgnoresOrderAndImplementation() {
+    final var fromList = new TelegramTextFormat("-100123", 0, new LinkedHashSet<>(List.of(WARNING, INFO)));
+    final var fromEnumSet = new TelegramTextFormat("-100123", 0, EnumSet.of(INFO, WARNING));
+    assertEquals(fromEnumSet, fromList);
+    assertEquals(fromEnumSet.hashCode(), fromList.hashCode());
+    assertEquals(Set.of(INFO, WARNING), fromList.silentSeverities());
+    assertNotEquals(new TelegramTextFormat("-100123", 0, EnumSet.of(INFO)), fromEnumSet);
+    assertNotEquals(new TelegramTextFormat("-100123", 0), fromEnumSet);
+    // never a throw for a null probe, which Set.of would give
+    assertFalse(fromEnumSet.silentSeverities().contains(null));
+    assertFalse(new TelegramTextFormat("-100123").silentSeverities().contains(null));
+  }
+
+  @Test
+  void aNullSeverityElementIsRefused() {
+    final var withNull = new LinkedHashSet<IncidentSeverity>();
+    withNull.add(INFO);
+    withNull.add(null);
+    assertThrows(NullPointerException.class, () -> new TelegramTextFormat("-100123", 0, withNull));
+  }
+
+  /// The chat id and the topic are checked before the set.
+  @Test
+  void theChatIdAndTopicAreCheckedBeforeTheSilentSeverities() {
+    final var withNull = new LinkedHashSet<IncidentSeverity>();
+    withNull.add(null);
+    final var chatId = assertThrows(IllegalStateException.class, () -> new TelegramTextFormat(null, 0, withNull));
+    assertEquals("TelegramTextFormat chatId is required.", chatId.getMessage());
+    final var topic = assertThrows(IllegalStateException.class, () -> new TelegramTextFormat("chat-1", -1, withNull));
+    assertEquals("TelegramTextFormat messageThreadId must not be negative: -1.", topic.getMessage());
   }
 
   @Test
@@ -137,12 +297,16 @@ final class TelegramTextFormatTests {
         .details("d".repeat(TelegramTextFormat.MAX_TEXT_LENGTH + 100))
         .severity(IncidentSeverity.WARNING)
         .create();
-    final var json = new TelegramTextFormat("chat-1", 9).render(alert);
+    assertTruncatedBody(new TelegramTextFormat("chat-1", 9).render(alert), false);
+    assertTruncatedBody(new TelegramTextFormat("chat-1", 9, EnumSet.of(WARNING)).render(alert), true);
+  }
 
+  private static void assertTruncatedBody(final String json, final boolean silent) {
     final var parsed = new Object() {
       String chatId, text;
       int messageThreadId;
       boolean previewsDisabled;
+      Boolean disableNotification;
     };
     JsonIterator.parse(json).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
@@ -152,6 +316,9 @@ final class TelegramTextFormatTests {
         parsed.messageThreadId = Integer.parseInt(ji.readNumberAsString());
       } else if (fieldEquals("text", buf, offset, len)) {
         parsed.text = ji.readString();
+      } else if (fieldEquals("disable_notification", buf, offset, len)) {
+        assertEquals(ValueType.BOOLEAN, ji.whatIsNext());
+        parsed.disableNotification = ji.readBoolean();
       } else if (fieldEquals("link_preview_options", buf, offset, len)) {
         assertEquals(ValueType.OBJECT, ji.whatIsNext());
         ji.testObject((buf2, offset2, len2, ji2) -> {
@@ -171,8 +338,13 @@ final class TelegramTextFormatTests {
     assertEquals("chat-1", parsed.chatId);
     assertEquals(9, parsed.messageThreadId);
     assertTrue(parsed.previewsDisabled);
+    // present as the boolean true when silent, absent otherwise
+    assertEquals(silent ? Boolean.TRUE : null, parsed.disableNotification);
     assertEquals(TelegramTextFormat.MAX_TEXT_LENGTH, parsed.text.length());
     assertTrue(parsed.text.startsWith("[WARNING] summary-1\nd"));
+    assertTrue(json.endsWith(silent
+        ? "\"link_preview_options\":{\"is_disabled\":true},\"disable_notification\":true}"
+        : "\"link_preview_options\":{\"is_disabled\":true}}"));
   }
 
   @Test

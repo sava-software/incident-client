@@ -38,7 +38,11 @@ may read the wait a failed response's body asks for.
   is required configuration. An optional `messageThreadId` sends the message to a topic of
   a forum supergroup as `message_thread_id`,
   `{"chat_id":"...","message_thread_id":42,"text":"...",...}`; absent or zero, no topic is
-  sent and the message goes to the chat as a whole. Link previews are disabled and cannot
+  sent and the message goes to the chat as a whole. An optional `silentSeverities` lists the
+  severities sent silently: an alert of a listed severity carries
+  `"disable_notification":true` after `link_preview_options`, so members get it without a
+  sound, and an alert of any other severity is sent as before, without the field. Absent,
+  every alert notifies. Listing `CRITICAL` silences pages in that chat. Link previews are disabled and cannot
   be switched on: a URL in an alert should not grow a preview card or be fetched by
   Telegram's preview crawler. Text over 4096 characters is truncated client-side, never
   between the two halves of a surrogate pair, since `sendMessage` rejects longer messages
@@ -140,9 +144,10 @@ To register your own provider id for config-driven use, publish an
 provider needing extra config fields implements the SPI directly and composes
 `WebhookConfig.parser()`, keeping the shared field handling and the strict
 unknown-field errors. The shared parser reads the keys `endpoint`, `requestTimeout`,
-`headers`, `bearerToken`, `chatId` and `messageThreadId` under your prefix. From
-Properties it reads and validates `messageThreadId` (an integer from 0 to 2147483647)
-even when your factory reads that key too; in JSON a field your parser matches first never
+`headers`, `bearerToken`, `chatId`, `messageThreadId` and `silentSeverities` under your
+prefix. From Properties it reads and validates `messageThreadId` (an integer from 0 to
+2147483647) and `silentSeverities` (a comma-separated list of `IncidentSeverity` names)
+even when your factory reads those keys too; in JSON a field your parser matches first never
 reaches it. So name your own fields differently:
 
 ```java
@@ -171,7 +176,12 @@ prefix) or from JSON. `endpoint` is required — it is your webhook URL, so ther
 default; `requestTimeout`, `headers`, and `bearerToken` are optional, as is
 `messageThreadId`, the forum topic only the `telegram` provider reads (an integer from 0 to
 2147483647; absent, a blank property, a JSON null or 0 means no topic; JSON takes a number
-or null, never a string; anything else fails the parse, whichever provider is configured).
+or null, never a string; anything else fails the parse, whichever provider is configured),
+and `silentSeverities`, the severities only the `telegram` provider sends silently (a
+comma-separated list of `IncidentSeverity` names in properties, each stripped of surrounding
+spaces; a JSON array of names, or null; names are case-sensitive; absent, blank, null or an
+empty array means none; an unknown name, an empty list entry, or any other JSON value fails
+the parse, whichever provider is configured).
 
 ```properties
 incident.provider=slack
@@ -190,11 +200,17 @@ incident.provider=telegram
 incident.endpoint=https://api.telegram.org/bot<TOKEN>/sendMessage
 incident.chatId=-1001234567890
 incident.messageThreadId=42
+incident.silentSeverities=INFO,WARNING
 ```
 
 ```json
 {"provider": "webhook", "config": {"endpoint": "https://hooks.example.com/notify",
  "headers": {"X-Api-Key": "KEY"}}}
+```
+
+```json
+{"provider": "telegram", "config": {"endpoint": "https://api.telegram.org/bot<TOKEN>/sendMessage",
+ "chatId": "-1001234567890", "silentSeverities": ["INFO", "WARNING"]}}
 ```
 
 ```java

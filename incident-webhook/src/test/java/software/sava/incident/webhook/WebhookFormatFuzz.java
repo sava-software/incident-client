@@ -7,6 +7,7 @@ import systems.comodal.jsoniter.ValueType;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.EnumSet;
 import java.util.Objects;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -23,13 +24,20 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// under the Telegram truncation limit), and the Telegram chat id must round-trip, as must
 /// the Telegram topic: a `message_thread_id` number token equal to the id when it is above
 /// zero, and no such field when it is zero. Every Telegram body must carry
-/// `link_preview_options` holding exactly `is_disabled`, the boolean `true`.
+/// `link_preview_options` holding exactly `is_disabled`, the boolean `true`, and must carry
+/// `disable_notification`, the boolean `true`, exactly when the alert's severity is one of
+/// the format's silent severities. That field is a differential too: a silent body equals
+/// the body of the same format without silent severities with its final `}` replaced by
+/// `,"disable_notification":true}`, and any other body equals it exactly.
 ///
 /// The first byte selects the severity; the remainder is split on NUL bytes into
-/// summary, key, details, source, one custom-detail entry, the Telegram chat id, and the
-/// Telegram topic. The topic part is optional: its [String#hashCode()] with the sign bit
-/// cleared is the message thread id, so an absent or empty part is 0 (no topic), and any
-/// id from 0 to [Integer#MAX_VALUE] is reachable.
+/// summary, key, details, source, one custom-detail entry, the Telegram chat id, the
+/// Telegram topic, and the Telegram silent severities. The topic part is optional: its
+/// [String#hashCode()] with the sign bit cleared is the message thread id, so an absent or
+/// empty part is 0 (no topic), and any id from 0 to [Integer#MAX_VALUE] is reachable. The
+/// silent-severities part is optional too: the low four bits of its [String#hashCode()] are
+/// a mask, bit `i` selecting `IncidentSeverity.values()[i]`, so an absent or empty part is
+/// none, and every subset is reachable.
 ///
 /// Deliberately free of Jazzer imports so it compiles with the regular test sources.
 ///
@@ -169,11 +177,26 @@ public final class WebhookFormatFuzz {
     // entity-unescaped slack text and the telegram text must be identical
     final var chatId = parts.length > 6 && !parts[6].isBlank() ? parts[6] : "chat-1";
     final int messageThreadId = parts.length > 7 ? parts[7].hashCode() & Integer.MAX_VALUE : 0;
-    final var telegramJson = new TelegramTextFormat(chatId, messageThreadId).render(alert);
+    final var silentSeverities = EnumSet.noneOf(IncidentSeverity.class);
+    if (parts.length > 8) {
+      final int mask = parts[8].hashCode() & 0xF;
+      for (int i = 0; i < severities.length; ++i) {
+        if ((mask & (1 << i)) != 0) {
+          silentSeverities.add(severities[i]);
+        }
+      }
+    }
+    final boolean silent = silentSeverities.contains(severity);
+    final var telegramJson = new TelegramTextFormat(chatId, messageThreadId, silentSeverities).render(alert);
     assertNoRawControlChars(telegramJson);
+    final var loudJson = new TelegramTextFormat(chatId, messageThreadId).render(alert);
+    final var expectedJson = silent
+        ? loudJson.substring(0, loudJson.length() - 1) + ",\"disable_notification\":true}"
+        : loudJson;
+    assertEq(expectedJson, telegramJson, "telegram body vs the body without silent severities");
     final var telegram = new Object() {
       String chatId, text, messageThreadId;
-      Boolean previewsDisabled;
+      Boolean previewsDisabled, disableNotification;
     };
     JsonIterator.parse(telegramJson).testObject((buf, offset, len, ji) -> {
       if (fieldEquals("chat_id", buf, offset, len)) {
@@ -185,6 +208,11 @@ public final class WebhookFormatFuzz {
         telegram.messageThreadId = ji.readNumberAsString();
       } else if (fieldEquals("text", buf, offset, len)) {
         telegram.text = ji.readString();
+      } else if (fieldEquals("disable_notification", buf, offset, len)) {
+        if (ji.whatIsNext() != ValueType.BOOLEAN) {
+          throw new AssertionError("disable_notification is not a boolean in: " + telegramJson);
+        }
+        telegram.disableNotification = ji.readBoolean();
       } else if (fieldEquals("link_preview_options", buf, offset, len)) {
         if (ji.whatIsNext() != ValueType.OBJECT) {
           throw new AssertionError("link_preview_options is not an object in: " + telegramJson);
@@ -204,6 +232,8 @@ public final class WebhookFormatFuzz {
     });
     assertEq(chatId, telegram.chatId, "chat_id");
     assertEq(Boolean.TRUE, telegram.previewsDisabled, "link_preview_options.is_disabled");
+    // present and true exactly when silent; never sent as false
+    assertEq(silent ? Boolean.TRUE : null, telegram.disableNotification, "disable_notification");
     if (messageThreadId > 0) {
       assertEq(Integer.toString(messageThreadId), telegram.messageThreadId, "message_thread_id");
     } else if (telegram.messageThreadId != null) {

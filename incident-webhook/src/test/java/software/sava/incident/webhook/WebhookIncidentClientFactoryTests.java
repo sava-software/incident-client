@@ -12,9 +12,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 
@@ -62,6 +64,7 @@ final class WebhookIncidentClientFactoryTests {
     final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
     assertEquals("-100123", format.chatId());
     assertEquals(0, format.messageThreadId());
+    assertEquals(Set.of(), format.silentSeverities());
     assertEquals(URI.create("https://api.telegram.org/bot123:ABC/sendMessage"), client.endpoint());
   }
 
@@ -110,16 +113,43 @@ final class WebhookIncidentClientFactoryTests {
         {"chat_id":"@channel","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true}}""", format.render(TOPIC_ALERT));
   }
 
-  /// The topic is a field of the shared config that only `telegram` reads: another provider
-  /// builds its own format with a valid one present, yet the shared parse still refuses an
-  /// invalid one, whichever provider is configured.
   @Test
-  void anotherProviderIgnoresTheTopic() {
+  void telegramSilentSeveritiesFromJson() {
+    final var client = IncidentClients.createClient(JsonIterator.parse("""
+        {"provider":"telegram","config":{"endpoint":"https://api.telegram.org/bot123:ABC/sendMessage","chatId":"-100123","silentSeverities":["INFO"]}}"""));
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals(new TelegramTextFormat("-100123", 0, EnumSet.of(IncidentSeverity.INFO)), format);
+    assertEquals("""
+        {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""", format.render(TOPIC_ALERT));
+  }
+
+  @Test
+  void telegramSilentSeveritiesFromProperties() {
+    final var properties = new Properties();
+    properties.setProperty("incident.provider", "telegram");
+    properties.setProperty("incident.endpoint", "https://api.telegram.org/bot123:ABC/sendMessage");
+    properties.setProperty("incident.chatId", "-100123");
+    properties.setProperty("incident.silentSeverities", "INFO");
+    final var client = IncidentClients.createClient(properties, "incident");
+    final var webhookClient = assertInstanceOf(WebhookIncidentClient.class, client);
+    final var format = assertInstanceOf(TelegramTextFormat.class, webhookClient.format());
+    assertEquals(new TelegramTextFormat("-100123", 0, EnumSet.of(IncidentSeverity.INFO)), format);
+    assertEquals("""
+        {"chat_id":"-100123","text":"[INFO] summary-1","link_preview_options":{"is_disabled":true},"disable_notification":true}""", format.render(TOPIC_ALERT));
+  }
+
+  /// The topic and the silent severities are fields of the shared config that only `telegram`
+  /// reads: another provider builds its own format with valid ones present, yet the shared
+  /// parse still refuses an invalid one, whichever provider is configured.
+  @Test
+  void anotherProviderIgnoresTelegramOnlyFields() {
     final var properties = new Properties();
     properties.setProperty("provider", "slack");
     properties.setProperty("endpoint", "https://hooks.slack.com/services/T000/B000/secret");
     properties.setProperty("chatId", "@channel");
     properties.setProperty("messageThreadId", "42");
+    properties.setProperty("silentSeverities", "INFO,WARNING");
     final var slack = assertInstanceOf(WebhookIncidentClient.class, IncidentClients.createClient(properties));
     assertSame(WebhookFormats.SLACK_TEXT, slack.format());
 
@@ -130,6 +160,19 @@ final class WebhookIncidentClientFactoryTests {
     properties.setProperty("messageThreadId", "topic");
     final var ex = assertThrows(IllegalStateException.class, () -> IncidentClients.createClient(properties));
     assertEquals("WebhookConfig messageThreadId must be an integer from 0 to 2147483647: 'topic'.", ex.getMessage());
+
+    properties.setProperty("messageThreadId", "42");
+    properties.setProperty("silentSeverities", "info");
+    for (final var provider : new String[]{"webhook", "slack"}) {
+      properties.setProperty("provider", provider);
+      final var silentEx = assertThrows(IllegalStateException.class, () -> IncidentClients.createClient(properties));
+      assertEquals("WebhookConfig silentSeverities must name severities from [CRITICAL, ERROR, WARNING, INFO]: 'info'.",
+          silentEx.getMessage());
+    }
+
+    final var jsonEx = assertThrows(IllegalStateException.class, () -> IncidentClients.createClient(JsonIterator.parse("""
+        {"provider":"slack","config":{"endpoint":"https://hooks.slack.com/services/T000/B000/secret","silentSeverities":"INFO"}}""")));
+    assertEquals("WebhookConfig silentSeverities must be a JSON array of severity names, not STRING.", jsonEx.getMessage());
   }
 
   @Test

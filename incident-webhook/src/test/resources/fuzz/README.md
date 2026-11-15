@@ -18,6 +18,14 @@ a file inside a corpus dir would itself be fed to the harness as a seed.
   cleared as the message thread id (an absent or empty part is 0, no topic), so this seed
   sends `message_thread_id` 415388035 and pins its round trip as a JSON number. Added as
   the landing place for the topic field, not measured against a mutation score.
+- `silent.bin` — `topic.bin` plus a ninth NUL-delimited part, the Telegram silent
+  severities `hush`. The harness takes the low four bits of that part's `String.hashCode()`
+  as a mask, bit `i` selecting `IncidentSeverity.values()[i]` (an absent or empty part is
+  none); `hush` gives `0b0010`, which is `{ERROR}`, and the seed's first byte `0x01` selects
+  `ERROR`, so this seed is both silent and in a topic: it pins `"disable_notification":true`
+  as the body's last field, after `link_preview_options`. (`silent` would give `0b0101`,
+  which misses `ERROR`.) Added as the landing place for the silent-severities field, not
+  measured against a mutation score.
 
 ## `retryAfter/` (regression corpus for `WebhookRetryAfterFuzz`)
 

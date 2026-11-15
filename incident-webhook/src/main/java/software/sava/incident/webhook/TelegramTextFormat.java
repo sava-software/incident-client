@@ -1,10 +1,14 @@
 package software.sava.incident.webhook;
 
 import software.sava.incident.core.api.IncidentAlert;
+import software.sava.incident.core.api.IncidentSeverity;
 import systems.comodal.jsoniter.JsonIterator;
 import systems.comodal.jsoniter.ValueType;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
 
 import static software.sava.incident.core.json.JsonUtil.escapeJson;
 import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
@@ -27,6 +31,16 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 /// whole (in a forum, its General topic). The Bot API reads the id as a 32-bit integer and treats
 /// zero as no topic too; a negative id is refused here.
 ///
+/// `silentSeverities` names the severities whose alerts are sent silently: for an alert of a
+/// listed severity the body ends with `sendMessage`'s `disable_notification`,
+/// `{...,"link_preview_options":{"is_disabled":true},"disable_notification":true}`, so chat
+/// members get the message without a sound; for any other severity the field is not sent,
+/// never sent as `false`, and the body is the one the two-argument format renders. Null or
+/// empty, the default and what the one- and two-argument constructors give, silences none.
+/// `CRITICAL` may be listed too, which silences pages in that chat. The set is copied, so a
+/// later change to the caller's set changes nothing, and the accessor's set refuses mutation;
+/// a null element is refused with a [NullPointerException].
+///
 /// Link previews are always disabled (`link_preview_options` with `is_disabled` `true`),
 /// and there is no option to turn them back on: an alert is text, and a URL in it, such as
 /// a dashboard or runbook link, should not grow a preview card or be fetched by Telegram's
@@ -40,12 +54,18 @@ import static systems.comodal.jsoniter.JsonIterator.fieldEquals;
 ///
 /// A failed request's wait is read from the Bot API error body's `parameters.retry_after`
 /// ([#retryAfter(String)], [#botApiRetryAfter(String)]).
-public record TelegramTextFormat(String chatId, int messageThreadId) implements WebhookFormat {
+public record TelegramTextFormat(String chatId,
+                                 int messageThreadId,
+                                 Set<IncidentSeverity> silentSeverities) implements WebhookFormat {
 
   /// The `sendMessage` `text` limit, in characters.
   public static final int MAX_TEXT_LENGTH = 4_096;
 
-  /// `chatId` is required; `messageThreadId` is zero for no topic and must not be negative.
+  private static final Set<IncidentSeverity> NO_SILENT_SEVERITIES =
+      Collections.unmodifiableSet(EnumSet.noneOf(IncidentSeverity.class));
+
+  /// `chatId` is required; `messageThreadId` is zero for no topic and must not be negative;
+  /// `silentSeverities` may be null or empty for none, and must not hold null.
   public TelegramTextFormat {
     if (chatId == null || chatId.isBlank()) {
       throw new IllegalStateException("TelegramTextFormat chatId is required.");
@@ -53,11 +73,22 @@ public record TelegramTextFormat(String chatId, int messageThreadId) implements 
     if (messageThreadId < 0) {
       throw new IllegalStateException("TelegramTextFormat messageThreadId must not be negative: " + messageThreadId + '.');
     }
+    // EnumSet.copyOf refuses an empty collection that is not an EnumSet
+    silentSeverities = silentSeverities == null || silentSeverities.isEmpty()
+        ? NO_SILENT_SEVERITIES
+        : Collections.unmodifiableSet(EnumSet.copyOf(silentSeverities));
   }
 
-  /// A format for the chat as a whole: no topic (`messageThreadId` zero).
+  /// A format for the chat as a whole: no topic (`messageThreadId` zero), and no severity
+  /// sent silently.
   public TelegramTextFormat(final String chatId) {
-    this(chatId, 0);
+    this(chatId, 0, null);
+  }
+
+  /// A format for a topic (`messageThreadId` above zero) or the chat as a whole (zero), with
+  /// no severity sent silently.
+  public TelegramTextFormat(final String chatId, final int messageThreadId) {
+    this(chatId, messageThreadId, null);
   }
 
   @Override
@@ -73,9 +104,10 @@ public record TelegramTextFormat(String chatId, int messageThreadId) implements 
     final var topic = messageThreadId > 0
         ? ",\"message_thread_id\":" + Integer.toString(messageThreadId)
         : "";
+    final var silent = silentSeverities.contains(alert.severity()) ? ",\"disable_notification\":true" : "";
     return String.format("""
-        {"chat_id":"%s"%s,"text":"%s","link_preview_options":{"is_disabled":true}}""",
-        escapeJson(chatId), topic, escapeJson(text)
+        {"chat_id":"%s"%s,"text":"%s","link_preview_options":{"is_disabled":true}%s}""",
+        escapeJson(chatId), topic, escapeJson(text), silent
     );
   }
 
