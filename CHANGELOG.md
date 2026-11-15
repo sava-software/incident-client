@@ -1,5 +1,24 @@
 # Changelog
 
+## [25.7.0](https://github.com/sava-software/incident-client/compare/25.6.0...25.7.0) (2026-11-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **incident-webhook:** the `TelegramTextFormat` record gains a third component, `silentSeverities`. A record deconstruction pattern with two components, such as `case TelegramTextFormat(var chatId, var topic)`, no longer compiles; the one- and two-argument constructors still compile and link. `toString` now has a third component, `silentSeverities=[...]` (`[]` by default), and so does the `WebhookIncidentClient` toString that embeds it; `equals` and `hashCode` include the set. The shared `WebhookConfig` parser now reads and validates a `silentSeverities` key for every webhook provider and for a factory that composes it: a Properties value that was ignored before now fails the parse unless it names severities.
+
+### Features
+
+* **incident-webhook:** follow a Telegram group's upgrade to a supergroup ([f4d09e1](https://github.com/sava-software/incident-client/commit/f4d09e1082db2de992baa4e64e4fbc4df41c7c7c))
+* **incident-webhook:** send chosen severities to Telegram silently ([9be308a](https://github.com/sava-software/incident-client/commit/9be308ad38b3b34fad8d02e9b1bc9a22d5d8adef))
+
+
+### Bug Fixes
+
+* **incident-core:** fail the returned future when a client throws on the first attempt ([a0c7b5d](https://github.com/sava-software/incident-client/commit/a0c7b5d6a71f5fec99d11f537662aa35c3441f7f))
+* **incident-pagerduty:** do not retry an accepted event whose body a response predicate could not read ([02aaa5b](https://github.com/sava-software/incident-client/commit/02aaa5bb679ba4d6208b5ae493dbfd94c46db417))
+* **incident-pagerduty:** fail the returned future when the client throws on the first attempt ([065daa3](https://github.com/sava-software/incident-client/commit/065daa3c7d92819d39924c69194daf43c775756a))
+
 ## [25.6.0](https://github.com/sava-software/incident-client/compare/25.5.3...25.6.0) (2026-11-14)
 
 
